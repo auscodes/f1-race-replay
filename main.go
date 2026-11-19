@@ -1,9 +1,10 @@
 package main
 
 import (
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"flag"
+	"io/fs"
 	"log"
 	"net/http"
 	"time"
@@ -11,6 +12,9 @@ import (
 
 //go:embed testdata/demo.json
 var demo []byte
+
+//go:embed web
+var web embed.FS
 
 func replayRoutes(clip recording, startedAt time.Time) *http.ServeMux {
 	mux := http.NewServeMux()
@@ -33,9 +37,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	viewer, err := fs.Sub(web, "web")
+	if err != nil {
+		log.Fatal(err)
+	}
+	mux := replayRoutes(clip, time.Now())
+	mux.Handle("GET /", http.FileServerFS(viewer))
 	server := http.Server{
 		Addr:              *addr,
-		Handler:           replayRoutes(clip, time.Now()),
+		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	log.Printf("F1 Race Replay at http://%s", *addr)
