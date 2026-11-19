@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4eff1">
+    <title>F1 Race Replay</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/viewer.js"></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <p class="wordmark">F1 Race Replay</p>
+      <p id="connection" class="connection" role="status">Loading recording</p>
+    </header>
+    <main>
+      <header class="session-title">
+        <h1 id="circuit-name">Race replay</h1>
+        <p>Synthetic recording <span aria-hidden="true">/</span> Shared playback</p>
+      </header>
+      <div class="replay-layout">
+        <section class="map" aria-label="Circuit map">
+          <canvas id="circuit" width="800" height="480" role="img" aria-label="Circuit map with car positions">
+            Current car positions are also available in the frame inspector.
+          </canvas>
+        </section>
+        <section class="timing" aria-labelledby="playback-heading">
+          <h2 id="playback-heading">Playback</h2>
+          <div class="clock">
+            <span id="elapsed">0:00.0</span>
+            <span id="duration" class="duration"></span>
+          </div>
+          <progress id="progress" aria-label="Time through recording" value="0" max="1"></progress>
+          <div class="frame-number"><span>Frame sequence</span><span id="sequence">—</span></div>
+
+          <h3>On track</h3>
+          <ul id="drivers" class="drivers"></ul>
+
+          <details id="inspector">
+            <summary>Inspect a frame</summary>
+            <p class="inspector-note">Showing a snapshot. Close to resume playback.</p>
+            <button id="capture" type="button" disabled>Capture latest frame</button>
+            <pre id="payload">Waiting for a frame…</pre>
+          </details>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>
