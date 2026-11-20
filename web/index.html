@@ -21,9 +21,9 @@
       <div class="replay-layout">
         <section aria-label="Circuit map">
           <div class="map">
-          <canvas id="circuit" width="800" height="480" role="img" aria-label="Circuit map with car positions">
-            Current car positions are also available in the frame inspector.
-          </canvas>
+            <canvas id="circuit" width="800" height="480" role="img" aria-label="Circuit map with car positions">
+              Current car positions are also available in the frame inspector.
+            </canvas>
           </div>
           <section id="analysis-controls" class="analysis-controls" aria-labelledby="timeline-heading" hidden>
             <h2 id="timeline-heading">Race timeline</h2>
@@ -38,6 +38,11 @@
               <label>Race event <select id="event-jump"></select></label>
             </div>
           </section>
+          <section id="gap-panel" class="gap-panel" aria-labelledby="gap-heading" hidden>
+            <div class="panel-heading"><h2 id="gap-heading">Gap to leader</h2><span>Seconds</span></div>
+            <ul id="gap-legend" class="gap-legend" aria-label="Chart legend"></ul>
+            <canvas id="gap-chart" role="img" aria-label="Gap to leader across the race, with the current replay time marked"></canvas>
+          </section>
         </section>
         <section class="timing" aria-labelledby="playback-heading">
           <h2 id="playback-heading">Playback</h2>
@@ -50,6 +55,19 @@
 
           <h3>Drivers</h3>
           <ul id="drivers" class="drivers"></ul>
+
+          <section id="lap-panel" class="review-section" aria-labelledby="lap-heading" hidden>
+            <h3 id="lap-heading">Completed laps</h3>
+            <table class="lap-table">
+              <thead><tr><th scope="col">Driver</th><th scope="col">Last lap</th><th scope="col">Fastest so far</th></tr></thead>
+              <tbody id="lap-rows"></tbody>
+            </table>
+          </section>
+
+          <section id="events-panel" class="review-section" aria-labelledby="events-heading" hidden>
+            <h3 id="events-heading">Race events</h3>
+            <ol id="race-events" class="race-events"></ol>
+          </section>
 
           <details id="inspector">
             <summary>Inspect a frame</summary>
