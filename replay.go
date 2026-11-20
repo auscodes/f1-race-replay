@@ -28,15 +28,24 @@ type timedValue struct {
 }
 
 type driverTiming struct {
-	Laps      []timedValue `json:"laps"`
-	Positions []timedValue `json:"positions"`
-	Gaps      []timedValue `json:"gaps"`
+	Laps          []timedValue `json:"laps"`
+	Positions     []timedValue `json:"positions"`
+	Gaps          []timedValue `json:"gaps"`
+	CompletedLaps []lapResult  `json:"completedLaps,omitempty"`
+}
+
+type lapResult struct {
+	ElapsedMS  int64 `json:"elapsedMs"`
+	Lap        int   `json:"lap"`
+	DurationMS int64 `json:"durationMs"`
 }
 
 type raceEvent struct {
 	ElapsedMS int64  `json:"elapsedMs"`
 	Label     string `json:"label"`
 	Kind      string `json:"kind"`
+	StopMS    int64  `json:"stopMs,omitempty"`
+	LaneMS    int64  `json:"laneMs,omitempty"`
 }
 
 type raceTimeline struct {
