@@ -18,4 +18,4 @@ Two separate Go processes streamed the full Barcelona recording from Moto, a loc
 - Built a Go F1 replay platform that loads historical telemetry through the S3 SDK and streams it over WebSockets. Synchronized playback across replicas using a Redis clock and Pub/Sub, with the S3 flow verified using Moto.
 - Autoscaled WebSocket pods on local Kubernetes with Prometheus and KEDA. Tested 220 concurrent k6 connections and verified recovery for all 129 affected viewers within 1.21 seconds after deleting a serving pod.
 
-For the spoken walkthrough, see the [project guide](../PROJECT_GUIDE.md). For running the app, see the [README](../README.md).
+For a plain-language explanation of every tool in the bullets, start with the [beginner stack guide](STACK_GUIDE.md). For the spoken walkthrough, see the [project guide](../PROJECT_GUIDE.md). For running the app, see the [README](../README.md).

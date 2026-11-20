@@ -1,5 +1,7 @@
 # Milestones 4 and 5 · Scaling and recovery
 
+New to Kubernetes or load tests? Start with [how the app scales and a viewer recovers](STACK_GUIDE.md#bullet-2--how-the-app-scales-and-a-viewer-recovers).
+
 ## What to say in an interview
 
 > The Go WebSocket handler increments a gauge after a connection is accepted and decrements it when the connection ends. Prometheus scrapes each pod separately. KEDA exposes the sum of those active connections to Kubernetes’ Horizontal Pod Autoscaler, which adjusts how many Go replicas are serving the replay.
