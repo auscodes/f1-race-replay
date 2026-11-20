@@ -101,13 +101,15 @@ export function startAnalysis(session, receiveFrame, setStatus) {
     showAt(time);
   }
 
+  function jump(time) {
+    const frame = Math.ceil(time / session.intervalMs);
+    seek(frame * session.intervalMs);
+  }
+
   scrub.addEventListener("change", () => seek(Number(scrub.value)));
   for (const select of [lapJump, eventJump]) {
     select.addEventListener("change", () => {
-      if (select.value !== "") {
-        const frame = Math.ceil(Number(select.value) / session.intervalMs);
-        seek(frame * session.intervalMs);
-      }
+      if (select.value !== "") jump(Number(select.value));
       select.value = "";
     });
   }
@@ -129,4 +131,5 @@ export function startAnalysis(session, receiveFrame, setStatus) {
 
   document.querySelector("#analysis-controls").hidden = false;
   showAt(0);
+  return jump;
 }

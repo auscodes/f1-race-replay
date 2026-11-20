@@ -146,6 +146,18 @@ def timing_series(rows, date_key, field, start, length, seed=False):
     return [{"elapsedMs": elapsed, "value": value} for elapsed, value in series.items()]
 
 
+def completed_laps(laps, start, length):
+    results = []
+    for lap in laps:
+        if not lap.get("date_start") or not lap.get("lap_duration"):
+            continue
+        duration = round(lap["lap_duration"] * 1000)
+        finish = timestamp_ms(lap["date_start"]) - start + duration
+        if duration > 0 and 0 <= finish <= length:
+            results.append({"elapsedMs": finish, "lap": lap["lap_number"], "durationMs": duration})
+    return sorted(results, key=lambda lap: lap["elapsedMs"])
+
+
 def race_timeline(control, laps, start, length):
     events = []
     drivers = {}
@@ -153,6 +165,7 @@ def race_timeline(control, laps, start, length):
         filters = f"&driver_number={driver}"
         drivers[driver] = {
             "laps": timing_series(laps[driver], "date_start", "lap_number", start, length),
+            "completedLaps": completed_laps(laps[driver], start, length),
             "positions": timing_series(fetch_rows("position", filters), "date", "position", start, length, seed=True),
             "gaps": timing_series(fetch_rows("intervals", filters), "date", "gap_to_leader", start, length),
         }
@@ -160,8 +173,11 @@ def race_timeline(control, laps, start, length):
         for index, stop in enumerate(stops, 1):
             elapsed = timestamp_ms(stop["date"]) - start
             if 0 <= elapsed < length:
-                events.append({"elapsedMs": elapsed, "kind": "pit",
-                               "label": f"{name.split()[-1]} pit stop {index}"})
+                event = {"elapsedMs": elapsed, "kind": "pit", "label": f"{name.split()[-1]} pit stop {index}"}
+                for source, target in (("stop_duration", "stopMs"), ("lane_duration", "laneMs")):
+                    if stop.get(source) and stop[source] > 0:
+                        event[target] = round(stop[source] * 1000)
+                events.append(event)
 
     labels = {"VSC DEPLOYED": "Virtual Safety Car deployed", "VSC ENDING": "Virtual Safety Car ending"}
     for row in control:

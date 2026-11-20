@@ -4,6 +4,7 @@ from import_barcelona import (
     CLIP_START,
     Sample,
     build_recording,
+    completed_laps,
     parse_samples,
     race_window,
     resample,
@@ -13,6 +14,13 @@ from import_barcelona import (
 
 
 class ImportTests(unittest.TestCase):
+    def test_lap_result_is_available_at_finish(self):
+        start = timestamp_ms("2026-06-14T13:00:00Z")
+        rows = [{"date_start": "2026-06-14T13:00:20Z", "lap_number": 1, "lap_duration": 81.123},
+                {"date_start": "2026-06-14T13:01:41Z", "lap_number": 2, "lap_duration": None}]
+        self.assertEqual(completed_laps(rows, start, 102_000),
+                         [{"elapsedMs": 101123, "lap": 1, "durationMs": 81123}])
+
     def test_race_window_extends_until_both_drivers_finish(self):
         start = "2026-06-14T13:00:00+00:00"
         control = [{"date": start, "message": "SESSION STARTED"}]

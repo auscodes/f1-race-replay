@@ -1,4 +1,5 @@
 import { startAnalysis } from "./analysis.js";
+import { setupRaceReview } from "./race-review.js";
 
 const canvas = document.querySelector("#circuit");
 const connection = document.querySelector("#connection");
@@ -105,6 +106,7 @@ async function start() {
   const response = await fetch("/api/session");
   if (!response.ok) throw new Error(`Session request failed (${response.status})`);
   const session = await response.json();
+  if (session.timeline) document.body.classList.add("race-review");
   document.querySelector("#circuit-name").textContent = session.name;
   document.querySelector("#recording-caption").textContent = session.caption || "Synthetic recording";
   document.querySelector("#duration").textContent = `/ ${raceTime(session.durationMs)}`;
@@ -133,6 +135,7 @@ async function start() {
   });
 
   const draw = drawMap(session.track, colors);
+  const review = session.timeline ? setupRaceReview(session) : undefined;
   let latestFrame;
   let capturedFrame;
 
@@ -142,6 +145,7 @@ async function start() {
     sequence.textContent = frame.sequence;
     progress.value = frame.elapsedMs;
     draw(frame.positions);
+    review?.update(frame.elapsedMs);
     for (const [driver, details] of timing) {
       const data = session.timeline.drivers[driver];
       const at = (records) => records?.findLast((record) => record.elapsedMs <= frame.elapsedMs);
@@ -190,11 +194,12 @@ async function start() {
     if (!shared) {
       document.querySelector("#playback-mode").textContent = "Local analysis";
       progress.hidden = true;
-      startAnalysis(session, receiveFrame, (message, state = "loading") => {
+      const jump = startAnalysis(session, receiveFrame, (message, state = "loading") => {
         if (connection.dataset.state === state && connection.textContent === message) return;
         connection.dataset.state = state;
         connection.textContent = message;
       });
+      review.setJump(jump);
       return;
     }
   }
