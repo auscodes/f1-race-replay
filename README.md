@@ -63,7 +63,9 @@ The default startup uses a process-local clock. The [Redis design notes](docs/RE
 
 ## Kubernetes
 
-The [local Kubernetes walkthrough](docs/DEPLOYMENT.md) packages the replay, configures Prometheus and KEDA, and runs the k6 load and recovery test.
+The local kind deployment runs the Go viewer, Redis, and Prometheus. KEDA scales the Go Deployment on open WebSocket connections. The optional Grafana dashboard shows the total connection count, connections per pod, and how many replay pods are responding to Prometheus. [Deploy to kind](docs/DEPLOYMENT.md#start-the-local-cluster) · [Open Grafana](docs/DEPLOYMENT.md#view-the-grafana-dashboard)
+
+In a recorded local load test, 220 simultaneous WebSockets drove a scale-up from two to four pods. After a serving pod was deleted, all 129 affected viewers received a correctly aligned frame within 1.208 seconds. The test measures the gap between valid frames from the viewer’s perspective. [Test setup and results](docs/DEPLOYMENT.md#verified-local-run) · [Grafana reruns](docs/DEPLOYMENT.md#grafana-verification-runs)
 
 ## Interfaces
 
@@ -94,3 +96,5 @@ npm run test:browser
 ```
 
 The Go, importer, and browser suites run in GitHub Actions. The Go job also checks formatting. For the architecture and a tour of the code, see the [project guide](PROJECT_GUIDE.md).
+
+New to the stack? The [technology walkthrough](docs/STACK_GUIDE.md) follows one race frame to the browser and one viewer through a pod failure. See the [project milestones](docs/ROADMAP.md) for implementation and verification status.
