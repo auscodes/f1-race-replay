@@ -22,6 +22,7 @@ export const options = {
     },
   },
   thresholds: {
+    iterations: [`count>=${viewers}`],
     replay_viewers_started: [`count>=${viewers}`],
     replay_frames_valid: ["rate==1"],
     ...(expectFailure ? {
@@ -50,6 +51,7 @@ export default async function ({intervalMs, frames}) {
     return new Promise((resolve) => {
       const socket = new WebSocket(endpoint);
       let completed = false;
+      let open = false;
       let watchdog = setTimeout(() => stop(false), 3000);
       const timer = setTimeout(() => stop(true), Math.max(1, finishAt - Date.now()));
 
@@ -64,15 +66,16 @@ export default async function ({intervalMs, frames}) {
           interruptedAt = lastFrame.at;
           interrupted.add(1);
         }
-        if (socket.readyState === WebSocket.OPEN) socket.close();
-        // k6 v2.1 cannot cancel a pending handshake via close(). Retry
-        // independently and close that socket only if it later opens.
-        if (socket.readyState === WebSocket.CONNECTING) {
-          socket.addEventListener("open", () => socket.close());
-        }
+        if (open) socket.close();
         resolve();
       }
 
+      // Retry independently of a pending k6 handshake and close that socket
+      // if it later opens.
+      socket.addEventListener("open", () => {
+        open = true;
+        if (completed) socket.close();
+      });
       socket.addEventListener("message", ({data}) => {
         if (completed) return;
         const now = Date.now();
@@ -106,7 +109,10 @@ export default async function ({intervalMs, frames}) {
         lastFrame = {sequence, at: now};
       });
 
-      socket.addEventListener("close", () => stop(false));
+      socket.addEventListener("close", () => {
+        open = false;
+        stop(false);
+      });
     });
   }
 
