@@ -69,8 +69,14 @@ One server clock means late joiners receive the current frame as soon as they co
 ### How race state and driver comparison follow a seek
 
 - **Race control is a timeline of changes.** The importer records the start, Virtual Safety Car deployment, the ending warning, the track-wide clear message, and the chequered flag. The viewer finds the most recent change at or before the current playhead. That works for backward seeks, late joins, and frames skipped during buffering. A clear signal for one sector doesn't end a track-wide Virtual Safety Car.
-- **The lap counter follows first place.** Find the driver in P1 at the playhead, then read that driver's latest lap. The race distance is the official winner's completed lap count. The lookup uses the same timestamps as the leaderboard.
+- **A race lap starts when the first driver starts it.** The importer keeps the earliest recorded start for each lap across all drivers. The lap jump and map counter read the same timeline. The race distance comes from the winner’s completed lap count.
 - **Driver selection stays in the browser.** Every driver's timing is already in the archive response. Changing either dropdown rebuilds the two chart series and recalculates last and fastest completed laps at the same playhead. The comparison and the local playback clock are independent.
+
+### How the map layers line up
+
+- **The sector splits come from one reference lap.** The importer adds Russell’s first and second sector durations to the lap start, then finds the nearest position sample at each split. It stores two indices into the existing track outline. The timing and locations are approximate, so the colored sections are useful for orientation. [OpenF1 lap and location data](https://openf1.org/docs/#laps)
+- **The same projection applies to the outline, markers, and clicks.** The browser rotates and fits the circuit to the map, then uses the projected car coordinates to find the closest marker to a click. The driver picker and standings offer the same selection by keyboard or touch.
+- **One driver selection drives the map and standings.** The viewer owns the selected driver. Both components use the same timing lookup for position, gap, tyres, and last lap. The selection can change while the playhead stays in place.
 
 ## Where to look in the code
 
@@ -83,7 +89,8 @@ One server clock means late joiners receive the current frame as soon as they co
 | [s3.go](s3.go) | Uses the AWS SDK to read the prepared JSON from S3. |
 | [replay.go](replay.go) | Defines the data types and uses `frameAt` to select a row in the clip. |
 | [stream.go](stream.go) | Upgrades the connection, sends frames, and skips ahead if a write falls behind. |
-| [web/viewer.js](web/viewer.js) | Fetches the session, opens the socket, and calls `ctx.arc` to place each car. |
+| [web/viewer.js](web/viewer.js) | Fetches the session, receives replay frames, and keeps the selected driver in sync. |
+| [web/circuit-map.js](web/circuit-map.js) | Projects the circuit and draws sector lines and car markers. Handles map selection and driver details. |
 | [web/analysis.js](web/analysis.js) | Handles the local clock, segment requests, and lap and event jumps. |
 | [web/timing-tower.js](web/timing-tower.js) | Picks timing records by replay time and renders rank, gaps, tyres, lap times, and flags. |
 | [web/race-context.js](web/race-context.js) | Finds the race-control state, leader and lap for the current frame. |

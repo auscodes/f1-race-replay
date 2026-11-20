@@ -1,9 +1,9 @@
+import { setupCircuitMap } from "./circuit-map.js";
 import { startAnalysis } from "./analysis.js";
 import { setupRaceContext } from "./race-context.js";
 import { setupRaceReview } from "./race-review.js";
 import { setupTimingTower, teamColor } from "./timing-tower.js";
 
-const canvas = document.querySelector("#circuit");
 const connection = document.querySelector("#connection");
 const elapsed = document.querySelector("#elapsed");
 const progress = document.querySelector("#progress");
@@ -12,87 +12,12 @@ const inspector = document.querySelector("#inspector");
 const capture = document.querySelector("#capture");
 const payload = document.querySelector("#payload");
 
-// Keep the data and drawing in the same 800 × 480 coordinate space. The
-// canvas resolution changes with screen size without moving any positions.
-const mapWidth = 800;
-const mapHeight = 480;
 const palette = ["#ff856b", "#72e4c7"];
 
 function raceTime(milliseconds) {
   const minutes = Math.floor(milliseconds / 60000);
   const seconds = (milliseconds % 60000) / 1000;
   return `${minutes}:${seconds.toFixed(1).padStart(4, "0")}`;
-}
-
-function drawMap(track, colors, grid) {
-  const ctx = canvas.getContext("2d");
-  const outline = new Path2D();
-  const [start, next] = track;
-  outline.moveTo(start.x, start.y);
-  for (const point of track.slice(1)) outline.lineTo(point.x, point.y);
-  outline.closePath();
-
-  return function draw(positions = [], focused) {
-    const displayWidth = canvas.clientWidth;
-    if (displayWidth === 0) return;
-    const width = Math.round(displayWidth * window.devicePixelRatio);
-    const height = Math.round(canvas.clientHeight * window.devicePixelRatio);
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
-    }
-    ctx.setTransform(width / mapWidth, 0, 0, height / mapHeight, 0, 0);
-    ctx.clearRect(0, 0, mapWidth, mapHeight);
-
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = "#b7a9a3";
-    ctx.lineWidth = 25;
-    ctx.stroke(outline);
-    ctx.strokeStyle = "#413737";
-    ctx.lineWidth = 22;
-    ctx.stroke(outline);
-
-    ctx.save();
-    ctx.translate(start.x, start.y);
-    ctx.rotate(Math.atan2(next.y - start.y, next.x - start.x));
-    for (let i = 0; i < 6; i++) {
-      ctx.fillStyle = i % 2 === 0 ? "#f4eee5" : "#211a1b";
-      ctx.fillRect(0, i * 4 - 12, 4, 4);
-      ctx.fillStyle = i % 2 === 0 ? "#211a1b" : "#f4eee5";
-      ctx.fillRect(4, i * 4 - 12, 4, 4);
-    }
-    ctx.restore();
-    const labelScale = Math.max(1, 640 / displayWidth);
-    ctx.font = `${14 * labelScale}px ui-monospace, monospace`;
-    ctx.fillStyle = "#c3b5b0";
-    ctx.textAlign = "center";
-    ctx.fillText("START / FINISH", start.x + 4, start.y + 43);
-
-    const tracked = focused && positions.find(({driver}) => driver === focused);
-    const cars = tracked ? [...positions.filter(({driver}) => driver !== focused), tracked] : positions;
-    for (const { driver, x, y } of cars) {
-      const showNumber = !grid || driver === focused;
-      ctx.beginPath();
-      ctx.arc(x, y, (showNumber ? 13 * labelScale : 6), 0, 2 * Math.PI);
-      ctx.fillStyle = colors.get(driver);
-      ctx.fill();
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = driver === focused ? "#fff" : "#211a1b";
-      ctx.stroke();
-      if (showNumber) {
-        ctx.fillStyle = grid ? "#fff" : "#211a1b";
-        if (grid) {
-          ctx.beginPath();
-          ctx.arc(x, y, 10 * labelScale, 0, 2 * Math.PI);
-          ctx.fillStyle = "#211a1b";
-          ctx.fill();
-          ctx.fillStyle = "#fff";
-        }
-        ctx.font = `bold ${12 * labelScale}px ui-monospace, monospace`;
-        ctx.fillText(driver, x, y + 4 * labelScale);
-      }
-    }
-  };
 }
 
 function connect(onFrame) {
@@ -154,15 +79,18 @@ async function start() {
     drivers.append(item);
   });
 
-  const draw = drawMap(session.track, colors, grid);
+  const map = setupCircuitMap(session, colors, setFocus);
   const updateContext = session.timeline ? setupRaceContext(session) : undefined;
   let review = session.timeline && !grid ? setupRaceReview(session) : undefined;
   let latestFrame, capturedFrame, focused, jump;
   let requestedTiming = false;
-  const tower = grid ? setupTimingTower(session, (driver) => {
+  const tower = grid ? setupTimingTower(session, setFocus) : undefined;
+
+  function setFocus(driver) {
     focused = driver;
-    draw((capturedFrame ?? latestFrame)?.positions, focused);
-  }) : undefined;
+    tower?.setFocus(driver);
+    map.update(capturedFrame ?? latestFrame, focused);
+  }
 
   async function loadTiming() {
     try {
@@ -183,7 +111,7 @@ async function start() {
     elapsed.textContent = raceTime(frame.elapsedMs);
     sequence.textContent = frame.sequence;
     progress.value = frame.elapsedMs;
-    draw(frame.positions, focused);
+    map.update(frame, focused);
     tower?.update(frame.elapsedMs);
     updateContext?.(frame.elapsedMs);
     review?.update(frame.elapsedMs);
@@ -208,7 +136,6 @@ async function start() {
     showFrame(capturedFrame);
   }
 
-  new ResizeObserver(() => draw((capturedFrame ?? latestFrame)?.positions, focused)).observe(canvas);
   capture.addEventListener("click", captureFrame);
   inspector.addEventListener("toggle", () => {
     if (inspector.open) {

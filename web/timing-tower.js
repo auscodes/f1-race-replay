@@ -21,6 +21,22 @@ function gapLabel(value) {
   return /^\+\d+ laps?$/i.test(value) ? value.toLowerCase() : unknown;
 }
 
+export function driverSnapshot(session, data, elapsed, useInterval = false) {
+  const classified = elapsed >= session.durationMs - session.intervalMs;
+  const outcome = data?.outcome;
+  const status = outcome && outcome.elapsedMs <= elapsed ? outcome.status : undefined;
+  const at = status === "finished" ? outcome.elapsedMs : elapsed;
+  const position = classified ? outcome?.position : Number(latestAt(data?.positions, at)?.value);
+  const sample = latestAt(useInterval ? data?.intervals : data?.gaps, at);
+  const value = classified ? outcome?.gap : sample && at - sample.elapsedMs <= 15_000 ? sample.value : undefined;
+  const retired = status && status !== "finished";
+  const gap = retired ? unknown : position === 1 ? "Leader" : gapLabel(value);
+  const lastLap = latestAt(data?.completedLaps, at);
+  const lap = lastLap ? lastLap.lap + (status ? 0 : 1) : Number(latestAt(data?.laps, at)?.value);
+  const stint = retired ? undefined : data?.tyres?.find(({lapStart, lapEnd}) => lapStart <= lap && lap <= lapEnd);
+  return {position, gap, lastLap, lap, stint, status};
+}
+
 function setText(node, value) {
   if (node.textContent !== value) node.textContent = value;
 }
@@ -69,15 +85,16 @@ export function setupTimingTower(session, focusDriver) {
   tower.hidden = false;
 
   for (const {driver, button} of rows) {
-    button.addEventListener("click", () => {
-      selected = selected === driver ? undefined : driver;
-      for (const entry of rows) {
-        const active = selected === entry.driver;
-        entry.button.setAttribute("aria-pressed", String(active));
-        entry.row.classList.toggle("is-tracked", active);
-      }
-      focusDriver(selected);
-    });
+    button.addEventListener("click", () => focusDriver(selected === driver ? undefined : driver));
+  }
+
+  function setFocus(driver) {
+    selected = driver;
+    for (const entry of rows) {
+      const active = selected === entry.driver;
+      entry.button.setAttribute("aria-pressed", String(active));
+      entry.row.classList.toggle("is-tracked", active);
+    }
   }
 
   function update(time) {
@@ -89,23 +106,14 @@ export function setupTimingTower(session, focusDriver) {
     mode.disabled = classified;
     setText(gapHeading, useInterval ? "Interval" : "Gap");
     const ranked = rows.map((entry) => {
-      const data = timing.drivers[entry.driver];
-      const outcome = data?.outcome;
-      const status = outcome && outcome.elapsedMs <= elapsed ? outcome.status : undefined;
-      const sampleTime = status === "finished" ? outcome.elapsedMs : elapsed;
-      const position = classified ? outcome?.position : Number(latestAt(data?.positions, sampleTime)?.value);
+      const {position, gap, lastLap, lap, stint, status} =
+        driverSnapshot(session, timing.drivers[entry.driver], elapsed, useInterval);
       setText(entry.position, position > 0 ? String(position) : unknown);
-      const gap = latestAt(useInterval ? data?.intervals : data?.gaps, sampleTime);
-      const value = classified ? outcome?.gap : gap && sampleTime - gap.elapsedMs <= 15_000 ? gap.value : undefined;
-      const retired = status && status !== "finished";
-      setText(entry.gap, retired ? unknown : position === 1 ? "Leader" : gapLabel(value));
-      const lastLap = latestAt(data?.completedLaps, sampleTime);
+      setText(entry.gap, gap);
       setText(entry.lap, lapLabel(lastLap));
-      const currentLap = lastLap ? lastLap.lap + (status === "finished" ? 0 : 1) : Number(latestAt(data?.laps, sampleTime)?.value);
-      const stint = data?.tyres?.find((tyre) => tyre.lapStart <= currentLap && currentLap <= tyre.lapEnd);
       const code = compoundCodes[stint?.compound];
-      if (code && !retired) {
-        const age = stint.startingAge == null ? undefined : stint.startingAge + currentLap - stint.lapStart;
+      if (code) {
+        const age = stint.startingAge == null ? undefined : stint.startingAge + lap - stint.lapStart;
         setText(entry.tyre, age === undefined ? code : `${code} ${age}`);
         entry.tyre.dataset.compound = code;
         entry.tyre.title = age === undefined ? stint.compound : `${stint.compound} · ${age} laps of use at start of lap`;
@@ -136,6 +144,7 @@ export function setupTimingTower(session, focusDriver) {
   });
   return {
     update,
+    setFocus,
     setTiming(timeline) {
       timing = timeline;
       message.hidden = true;

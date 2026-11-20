@@ -8,6 +8,18 @@ export function latestAt(records, elapsed) {
   return records?.[low - 1];
 }
 
+export function leaderAt(drivers, elapsed) {
+  let leader, lastChange = -1;
+  for (const [id, driver] of Object.entries(drivers ?? {})) {
+    const position = latestAt(driver.positions, elapsed);
+    if (position?.value === "1" && position.elapsedMs > lastChange) {
+      leader = id;
+      lastChange = position.elapsedMs;
+    }
+  }
+  return leader;
+}
+
 const stateLabels = {
   green: "Green flag",
   vsc: "Virtual Safety Car",
@@ -30,15 +42,9 @@ export function setupRaceContext(session) {
     strip.hidden = !label;
     if (!label || !totalLaps) return;
 
-    let leader, lastChange = -1;
-    for (const driver of Object.values(drivers)) {
-      const position = latestAt(driver.positions, elapsed);
-      if (position?.value === "1" && position.elapsedMs > lastChange) {
-        leader = driver;
-        lastChange = position.elapsedMs;
-      }
-    }
-    const current = Number(latestAt(leader?.laps, elapsed)?.value);
+    const raceLap = latestAt(session.timeline.raceLaps, elapsed);
+    const leader = raceLap ? undefined : drivers?.[leaderAt(drivers, elapsed)];
+    const current = Number(raceLap?.value ?? latestAt(leader?.laps, elapsed)?.value);
     const lap = state === "chequered" ? totalLaps : Math.min(current, totalLaps);
     if (Number.isFinite(lap) && lap > 0) {
       const text = `Lap ${lap} / ${totalLaps}`;

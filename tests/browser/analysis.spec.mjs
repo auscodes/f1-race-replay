@@ -30,7 +30,7 @@ test("personal replay opens one segment and jumps with matching driver timing", 
   await expect(page.getByRole("heading", {name: "Gap to leader"})).toBeVisible();
   await expect(page.locator("#lap-rows")).not.toContainText("0:06.001");
 
-  await page.getByLabel("Hamilton lap").selectOption({label: "Lap 2"});
+  await page.getByLabel("Go to lap").selectOption({label: "Lap 2"});
   await expect(page.locator("#elapsed")).toHaveText("0:06.2");
   await expect(page.locator("#drivers")).toContainText("Lap 2");
   await expect(page.locator("#lap-rows")).toContainText("0:06.001");
@@ -47,7 +47,7 @@ test("personal replay opens one segment and jumps with matching driver timing", 
   await expect(page.getByRole("button", {name: "Play", exact: true})).toBeVisible();
   await page.getByRole("slider", {name: "Replay time"}).press("End");
   await expect(page.locator("#lap-rows")).toContainText("0:05.949");
-  await page.getByLabel("Hamilton lap").selectOption({label: "Lap 1"});
+  await page.getByLabel("Go to lap").selectOption({label: "Lap 1"});
   await expect(page.locator("#elapsed")).toHaveText("0:00.0");
   await expect(page.locator("#lap-rows")).not.toContainText("0:06.001");
 });

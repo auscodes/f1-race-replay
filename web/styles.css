@@ -361,3 +361,50 @@ pre {
   .tower-table th, .tower-table td { padding-inline: 3px; }
   .tower-table { font-size: .72rem; }
 }
+
+.full-grid .map {
+  background-color: #211b1d;
+  background-image: radial-gradient(#3b3134 1px, transparent 1px);
+}
+.map-toolbar, .map-detail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 12px 16px;
+  background: #2a2225;
+}
+.map-toolbar[hidden], .map-detail[hidden], .map-sectors[hidden], #lap-jump-label[hidden] { display: none; }
+.map-toolbar { border-block-end: 1px solid #4e4144; }
+.map-toolbar h2 { font-size: .93rem; }
+.map-toolbar label { display: flex; align-items: center; gap: 8px; font-size: .76rem; color: #ded0cc; }
+.map-toolbar select {
+  max-width: 100%;
+  color: #fff3ef;
+  background: #332a2d;
+  border: 1px solid #756568;
+  border-radius: 4px;
+  padding: 5px 6px;
+  min-height: 34px;
+  font: inherit;
+}
+.map-toolbar select:focus-visible { outline-color: #75cfc2; }
+.full-grid .map canvas { cursor: crosshair; }
+.map-detail { min-height: 60px; border-block-start: 1px solid #4e4144; }
+.map-detail strong, .map-detail span { display: block; }
+.map-detail strong { font-size: .86rem; }
+.map-detail span { margin-top: 3px; color: #ded0cc; font-size: .75rem; font-variant-numeric: tabular-nums; }
+.map-sectors { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 0; margin: 0; list-style: none; }
+.map-sectors li { display: flex; align-items: center; gap: 5px; color: #ded0cc; font-size: .73rem; white-space: nowrap; }
+.map-sectors li::before { content: ""; display: block; width: 13px; height: 2px; background: #75cfc2; }
+.map-sectors li:nth-child(2)::before { background: #e4b26c; }
+.map-sectors li:nth-child(3)::before { background: #c0aef0; }
+#event-link { margin-inline-start: auto; padding: 8px 0; color: var(--accent); font-size: .82rem; text-underline-offset: .2em; }
+#events-heading { scroll-margin-top: 16px; }
+#event-marks .flag { background: var(--ink); }
+@media (max-width: 430px) {
+  .map-toolbar, .map-detail { padding: 10px 12px; }
+  .map-toolbar select { max-width: 145px; }
+  .playback-controls { gap: 8px 10px; }
+}
