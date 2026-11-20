@@ -1,122 +1,122 @@
 # F1 Race Replay project guide
 
-F1 Race Replay lets people study a race by replaying car positions on a track map. The full Barcelona recording follows all 22 drivers from lights out through the last classified finisher, about 94 minutes. A 50-second clip around Hamilton's final pit stop remains available for quick checks. [Formula 1 race report](https://www.formula1.com/en/latest/article/hamilton-claims-stellar-maiden-grand-prix-victory-for-ferrari-in-barcelona-as-antonelli-suffers-shock-retirement.4yCXiPLHUdcnl2BwNpqUIa)
+## The project in one minute
 
-## Architecture
+F1 Race Replay is an interactive map and timing dashboard for a recorded Formula 1 race. A viewer can pause and compare how two drivers’ gaps changed around a pit stop, or join other viewers following the same replay clock. The main recording covers all 22 drivers in the 2026 Barcelona-Catalunya Grand Prix, from lights out through the last classified finisher. It runs for about 94 minutes.
+
+**Milestone 1** proved the shared playback loop using a small synthetic recording. **Milestone 2** added the historical data pipeline, local and S3 recording sources, on-demand seeking, and the full race dashboard. A single Go process can synchronize its connected viewers. **Milestone 3** will address synchronization across server replicas.
+
+Here’s a short way to introduce it in an interview:
+
+> I built a historical F1 replay with two viewing modes. One lets you study a race on your own. The other keeps viewers on a shared server clock. I prepared the location and timing data once so the viewer can jump straight to any moment. The main design decision was to use position snapshots for the map and separate timing records for the standings, with both keyed to the same race time.
+
+## Architecture and responsibilities
 
 ```mermaid
 flowchart LR
-    S["OpenF1 location and timing records"] --> P["Offline Python importer"]
-    P --> A["Prepared JSON<br/>Local file or S3 object"]
-    A --> B["Go server<br/>One shared playback clock"]
-    C["Browser"] -->|"HTTP GET / and /api/session"| B
-    B -->|"HTTP responses<br/>Page, assets, session metadata"| C
-    B -->|"HTTP /api/segments/{index}<br/>Local analysis"| C
-    B -->|"HTTP /api/timing<br/>Full-grid standings and stints"| C
-    B -->|"WebSocket /ws<br/>Current car positions"| C
-    C --> D["Canvas<br/>Draws the track and cars"]
-    C --> E["Timing tower<br/>Shows standings at replay time"]
+    A["OpenF1 historical records"] --> P["Python importer<br/>Align timestamps, prepare frames and timing"]
+    P --> R["Prepared JSON<br/>Local file or S3 object"]
+    R -->|"Read at startup"| G["Go server<br/>Recording in memory"]
+    G -->|"HTTP: page, session metadata and timing"| B["Browser"]
+    G -->|"HTTP: position segments for local analysis"| B
+    G -->|"WebSocket: position frames for shared playback"| B
+    B --> M["Map and race controls"]
+    B --> T["Leaderboard, race events and comparison"]
 ```
 
-### When HTTP and WebSocket come in
-
-1. **Load the page over HTTP.** The browser requests `GET /` for the HTML, then fetches its JavaScript and CSS with separate HTTP requests.
-2. **Fetch the map over HTTP.** The JavaScript calls `GET /api/session` once on page load. Go returns a JSON response containing the circuit outline, driver IDs, and clip duration.
-3. **Open the position stream.** The browser connects to `/ws`. In this app, that starts as an HTTP/1.1 upgrade request. Go replies with `101 Switching Protocols` and the connection stays open as a WebSocket. The server sends the current frame immediately, then sends a new snapshot every 200 ms during steady playback.
-
-HTTP request and response fit the page and map because the browser needs them once. A WebSocket lets the server push changing positions over one open connection. Polling could do the job with repeated requests. Server-Sent Events (SSE) could also carry this one-way stream. WebSockets support messages in both directions if shared playback controls are added later.
-
-**Local analysis** starts paused and fetches the first position segment over HTTP. Segments cover 20 seconds for the full grid and one minute for the two-driver recording. Seeking requests the segment for the selected time. The browser keeps up to five segments and prefetches the next one near a boundary. The local clock controls play, pause, and speed. **Shared playback** uses the server clock and the WebSocket.
-
-The prepared full-grid file is about 24 MB. The metadata and first position segment total about 100 KB. The session metadata includes the small race-state timeline and race distance. The browser requests the complete driver timing history after the first position frame. Go compresses that separate response to about 400 KB for browsers that support gzip.
-
-To see the difference, open the browser's Network tab and reload. Inspect the JSON response from `/api/session`, then inspect `/api/segments/0` and `/api/timing`. Switch to shared playback to watch messages arrive over `/ws`.
-
-## Technologies to know
-
-| Technology | What to understand |
+| Technology | What you need to explain |
 | --- | --- |
-| **Python and OpenF1** | The importer turns uneven position samples into regular frames once, before anyone opens the viewer. The generated clip can be replayed without calling OpenF1. |
-| **Amazon S3** | An object is a stored recording identified by a bucket and key. Go fetches it once at startup. The server then serves frames from memory. |
-| **Go and `net/http`** | A route maps to a handler. Each WebSocket connection has its own send loop, timer, and write timeout. Learn how handlers share the recording and start time while each manages its own connection. |
-| **HTTP and WebSocket** | Be able to explain the page request, the metadata response, the upgrade, and what happens when a socket disconnects. |
-| **JSON, JavaScript, and Canvas** | JSON is the data format both sides agree on. JavaScript parses each frame and draws a dot at each driver's `x` and `y` on the canvas. |
+| **Python** | Runs offline to download, normalize, and join data. A generated recording can replay independently of the archive. |
+| **Go and `net/http`** | Load one recording at startup and serve the page, JSON endpoints, and WebSocket. Each connected viewer has a send loop. |
+| **JSON and S3** | JSON is the contract between Python, Go, and the browser. S3 is an optional way to store and retrieve the prepared file by bucket and key. |
+| **JavaScript and Canvas** | JavaScript owns the local playhead, looks up timing, and updates the interface. Canvas draws all the cars on one circuit. |
 
-## Data model and decisions
+### Clocks and data ownership
 
-| Model | What it stores and why |
+- **Source time** is the UTC timestamp in the archive. The importer subtracts the race start so the position, lap, and race-control feeds share one reference.
+- **Replay time** is the offset into the recording, represented by `elapsedMs`. It determines the car positions and what the viewer knows at that moment.
+- **Playback time** is how the playhead advances. The local browser has its own clock, speed, and pause state. In shared playback, Go derives the current frame from how long it has been running. Go divides the time since startup by the recording’s frame interval (200 ms for Barcelona) to get a sequence number, then takes the remainder after dividing by the frame count to get the index inside the recording. The sequence keeps increasing across loops.
+
+## From archive data to a recording
+
+1. The importer downloads OpenF1 records and caches the raw responses so it can reuse them on later runs. It uses the race start from race control and joins feeds by driver ID. IDs are strings in the recording so a value such as `"01"` keeps its leading zero.
+2. Location observations arrive at uneven times. Sort by timestamp, collapse identical duplicates, and reject conflicting observations at the same instant. Generate a frame every 200 ms. For a tick between samples no more than one second apart, estimate the coordinate along the line between them. If the gap is longer or the tick is outside the observations, omit the car from that frame. This bounds how much movement we infer from missing data.
+3. Use the same scale, offset, and vertical-axis flip for the circuit outline and every car. The outline comes from Russell’s lap 40. The two timing-sector boundaries are estimated by adding the reference lap’s sector durations to its start and matching the nearest usable position samples. The browser rotates and fits this map and uses the same projection for drawing and detecting clicks.
+4. Keep **timing records** separate from **position frames**. Timing arrives at a different cadence and has its own timestamps. Location can place two cars on the same straight while the timing feed says one is a lap down. The earliest recorded start across the field defines each race lap jump. [OpenF1 lap and location data](https://openf1.org/docs/#laps) · [OpenF1 timing data](https://openf1.org/docs/#intervals)
+
+| Part of the recording | Example and purpose |
 | --- | --- |
-| **Session metadata** | Circuit name, outline, driver IDs, and clip duration. Historical clips also carry driver names and source details, including the original UTC start time. The browser fetches metadata once. |
-| **Recording** | An interval and an array of position snapshots. The snapshots are 200 ms apart, so Go can look up a row by dividing elapsed time by the interval. The small demo file is loaded into memory at startup. |
-| **Stream frame** | `sequence` counts intervals since the process started. `elapsedMs` is the time within the clip and wraps at the end. `positions` contains each driver's ID and map coordinates. Driver IDs are strings, so `"01"` keeps its leading zero. |
+| **Session metadata** | Circuit outline, sector indices, driver IDs, duration, frame interval, race lap starts, and race-control transitions. It gives the browser enough to set up the map and controls. |
+| **Position frames** | A frame is an array of car positions such as `{ "driver": "44", "x": 490.03, "y": 219.19 }`. The frame’s array index determines its time, so a timestamp on every car would repeat the same information. |
+| **Timing history** | Separate timestamped lists per driver for running position, gap to leader, interval to the previous car, and laps. Tyre stints use lap ranges. A finish record carries its own timestamp. |
 
-One server clock means late joiners receive the current frame as soon as they connect. Sending **full snapshots** means any one message is enough to draw the cars, even after a skipped update. The trade-off is repeating every available car position in each message. Smaller change-only messages would require an initial snapshot and a way to recover missed changes.
+## From Go to the browser
 
-### How historical samples become frames
+Go can read the bundled synthetic demo, a prepared local file, or an `s3://bucket/key` object. It reads and decodes one recording before it starts listening. The server then reads that in-memory recording for all viewers. We exercised the S3 SDK path by uploading the two-driver Barcelona recording to **Moto**, a local S3 emulator. The full-grid replay runs from a generated local file.
 
-- **Align on source timestamps.** All cars use the same UTC ticks, 200 ms apart. We sort their samples, collapse identical duplicates, and reject conflicting positions at the same timestamp.
-- **Use nearby observations.** If a frame falls between two samples at most one second apart, estimate the position between them. Across a longer gap or beyond the available data, leave that driver's position out of the frame. The Barcelona source gave both drivers positions in all 250 frames.
-- **Use one map transform.** Russell's lap 40 gives the main circuit outline. The track and all cars get the same scale, offset, and vertical-axis flip. The outline approximates a driven lap. Pit-lane positions can appear beside it, and the source coordinates only support an approximate view of each car's progress. [OpenF1 location data](https://openf1.org/docs/#location)
-- **Keep race events separate from frames.** Lap changes, timing, pit stops, and VSC messages use the same elapsed clock as the positions. The two drivers can be on different laps at the same instant. Gaps come from the timing feed and expire after 15 seconds without an update. Barcelona has 28,135 full-grid frames. Timing records are stored separately because they update less often and have their own timestamps. [OpenF1 timing data](https://openf1.org/docs/#intervals)
-- **Show results at the point they become known.** A lap time enters the comparison at the lap's estimated finish, so seeking backwards also rolls back the fastest-lap value. The chart shows zero while the position feed records a driver in the lead. Elsewhere it leaves breaks where numeric gap samples are unavailable or more than 15 seconds apart. The event list shows pit-lane time and stationary stop time separately. [OpenF1 lap and pit data](https://openf1.org/docs/#laps)
-
-### How the leaderboard works
-
-- **Race order and gaps come from timing records.** Track coordinates draw the map. They cannot tell you how many laps a car has completed. The tower finds the most recent timing sample at or before the playhead. A gap is measured against the leader, while an interval is measured against the car ahead. The archive also reports lap deficits, such as `+1 lap`. [OpenF1 positions and intervals](https://openf1.org/docs/#intervals)
-- **Tyre age comes from the stint.** Match the driver's current lap to the stint's lap range. Add the laps run during the stint to the age reported when it began. The number is the age at the start of that lap. [OpenF1 stints](https://openf1.org/docs/#stints)
-- **A finish is per driver.** The importer matches a classified finisher's final lap to its start time and duration, then checks that the crossing falls after the race control flag. Even lapped drivers get their own finish time. At the final frame the tower switches to the official order and gaps, which can reflect penalties. Barcelona's archived results identify retirements without reliable timestamps for each car, so the tower shows those DNF labels with the final classification. Seeking backwards rolls back the results. [OpenF1 session results](https://openf1.org/docs/#session-result)
-
-### How race state and driver comparison follow a seek
-
-- **Race control is a timeline of changes.** The importer records the start, Virtual Safety Car deployment, the ending warning, the track-wide clear message, and the chequered flag. The viewer finds the most recent change at or before the current playhead. That works for backward seeks, late joins, and frames skipped during buffering. A clear signal for one sector doesn't end a track-wide Virtual Safety Car.
-- **A race lap starts when the first driver starts it.** The importer keeps the earliest recorded start for each lap across all drivers. The lap jump and map counter read the same timeline. The race distance comes from the winner’s completed lap count.
-- **Driver selection stays in the browser.** Every driver's timing is already in the archive response. Changing either dropdown rebuilds the two chart series and recalculates last and fastest completed laps at the same playhead. The comparison and the local playback clock are independent.
-
-### How the map layers line up
-
-- **The sector splits come from one reference lap.** The importer adds Russell’s first and second sector durations to the lap start, then finds the nearest position sample at each split. It stores two indices into the existing track outline. The timing and locations are approximate, so the colored sections are useful for orientation. [OpenF1 lap and location data](https://openf1.org/docs/#laps)
-- **The same projection applies to the outline, markers, and clicks.** The browser rotates and fits the circuit to the map, then uses the projected car coordinates to find the closest marker to a click. The driver picker and standings offer the same selection by keyboard or touch.
-- **One driver selection drives the map and standings.** The viewer owns the selected driver. Both components use the same timing lookup for position, gap, tyres, and last lap. The selection can change while the playhead stays in place.
-
-## Where to look in the code
-
-| Start here | What it does |
+| Request | What happens |
 | --- | --- |
-| [tools/import_barcelona_grid.py](tools/import_barcelona_grid.py) | Downloads and caches the full-grid archive, joins timing records by driver, and computes finish times. |
-| [tools/import_barcelona.py](tools/import_barcelona.py) | Aligns location samples and transforms them into map frames. Also generates the two-driver recordings. |
-| [testdata/demo.json](testdata/demo.json) | Stores the synthetic track and 60 sets of car positions. |
-| [main.go](main.go) | Chooses the bundled demo, a local file, or S3. Starts the clock after reading the recording. |
-| [s3.go](s3.go) | Uses the AWS SDK to read the prepared JSON from S3. |
-| [replay.go](replay.go) | Defines the data types and uses `frameAt` to select a row in the clip. |
-| [stream.go](stream.go) | Upgrades the connection, sends frames, and skips ahead if a write falls behind. |
-| [web/viewer.js](web/viewer.js) | Fetches the session, receives replay frames, and keeps the selected driver in sync. |
-| [web/circuit-map.js](web/circuit-map.js) | Projects the circuit and draws sector lines and car markers. Handles map selection and driver details. |
-| [web/analysis.js](web/analysis.js) | Handles the local clock, segment requests, and lap and event jumps. |
-| [web/timing-tower.js](web/timing-tower.js) | Picks timing records by replay time and renders rank, gaps, tyres, lap times, and flags. |
-| [web/race-context.js](web/race-context.js) | Finds the race-control state, leader and lap for the current frame. |
-| [web/race-review.js](web/race-review.js) | Updates the selected pair’s gap chart and completed laps and connects event buttons to local seeking. |
+| **HTTP `GET /` and assets** | Loads the page, CSS, and JavaScript, which are embedded in the Go program. |
+| **HTTP `GET /api/session`** | Loads geometry, the driver list, race-control markers, lap jumps, and playback settings. Both modes start here. |
+| **HTTP `GET /api/segments/{index}`** | Local analysis requests a block of position frames. For the full grid, a block contains up to 100 frames, or 20 seconds. It includes the absolute index of its first frame. |
+| **WebSocket `/ws`** | Shared playback starts with an HTTP upgrade and keeps the connection open. Go sends the current frame immediately, then pushes full snapshots on the server’s clock. Each message includes `sequence`, `elapsedMs`, and `positions`. |
+| **HTTP `GET /api/timing`** | After the first map frame, the full-grid viewer requests the detailed timing history. Go encodes it once and can serve a gzip version to browsers that accept it. |
 
-## Trace one frame
+**Why these delivery methods?** Local analysis knows the exact time it wants, so it can request that segment directly and move the playhead independently. Shared playback needs the server to push the changing position to everyone following it. A WebSocket gives it a persistent connection. Server-Sent Events could also carry the one-way stream. WebSockets leave room for two-way controls in a future version.
 
-At **0:28.2** in the short Barcelona clip, the importer uses source time **14:01:36.200 UTC**. Hamilton's surrounding observations are at **14:01:36.171** and **14:01:36.411**. The importer estimates his position between them, transforms it onto the map, and writes it to frame index **141**. In the full race, that same moment is around **58:08** because the recording starts at lights out. The source clock gives both recordings a common reference point.
+**What happens on a slow connection?** The full-grid file is about 24 MB. Metadata plus the first position segment total about 100 KB. The separate timing response is about 400 KB with gzip. In local analysis the browser keeps up to five segments, reuses an in-flight request for the same segment, and prefetches the next one near the boundary. After a quick series of seeks, only the latest request can update the displayed frame. During shared playback Go reads the current frame on every send, so a slow connection can skip older snapshots and catch up.
 
-## How we verify changes
+## Trace one moment without opening the code
 
-| Test layer | What it checks |
+Pick the first **Virtual Safety Car deployed** entry in Race events:
+
+1. The event is at **3,335,146 ms** after lights out. The browser rounds up to **3,335,200 ms**, the first frame at or after the event.
+2. Divide that time by 200 ms to get **frame 16,676**. With 100 frames per segment, request **segment 166** if it is absent from the cache. Read frame **76** within that segment. Segment and frame offsets start at zero.
+3. The viewer sends the car positions to Canvas and passes the same frame time to the timing tower, map details, race-state banner, and lap comparison.
+4. The race-state lookup finds the latest transition at or before that time and displays **Virtual Safety Car**. A backward seek before deployment selects the previous **Green flag** state. The ending warning and the track-wide clear message take effect at their own recorded times.
+
+The key here is that a seek, a late join, and ordinary playback can all render from a timestamp. Each view can arrive at the same answer even if it skipped earlier frames.
+
+### What the dashboard derives
+
+| Feature | Rule at the current playhead |
 | --- | --- |
-| **Unit** | Replay timing at startup and loop boundaries, a one-frame recording, and rejection of malformed or incomplete recordings. [Replay tests](replay_test.go) |
-| **Importer** | UTC alignment, duplicate samples, exact matches, gaps, and a shared coordinate transform. CI uses synthetic inputs, including lapped finishers and retirements. [Importer tests](tools/test_import_barcelona.py) · [Classification tests](tools/test_import_barcelona_grid.py) |
-| **Integration** | File loading, a signed S3 request against a local endpoint, HTTP session metadata, and advancing frames on a real WebSocket. [File tests](main_test.go) · [S3 tests](s3_test.go) · [Route tests](routes_test.go) · [WebSocket tests](stream_test.go) |
-| **Browser** | Playwright starts the Go app and checks that the inspector can freeze and resume, playback continues after reconnect, and a failed metadata request shows an error. The grid test checks that race state and finish flags roll back when seeking, and that changing the selected pair keeps the same playhead. [Grid test](tests/browser/grid.spec.mjs) [Browser tests](tests/browser/replay.spec.mjs) |
+| **Leaderboard** | Use the latest recorded running position. Gap is relative to the leader, interval is relative to the car ahead, and a lap deficit is shown as a lap count. Gap and interval samples expire after 15 seconds. |
+| **Tyres and lap times** | Find the stint whose lap range contains the driver’s current lap. Tyre age is the age at the start of the stint plus laps run in that stint. Last and fastest lap times only consider laps whose estimated completion time has passed. |
+| **Checkered flag and classification** | Match each classified finisher’s final lap to its start and duration. Show their flag at that crossing, including for lapped finishers. Use official order and gaps at the final frame, when any classification changes apply. Barcelona’s retirement labels appear at classification because the archive provides final outcomes with incomplete retirement timestamps. |
+| **Map selection and comparison** | The viewer owns the selected car, so a click, driver picker, and leaderboard stay synchronized. The selected pair for the chart is independent and uses timing already loaded in the browser. |
 
-GitHub Actions runs these checks on pull requests. The real Barcelona clip is generated locally. The S3 test uses a local endpoint with test credentials.
+## Reading the code in order
 
-## Think like a system designer
+1. **`import_grid` and `resample`** build the recording. Start with the high-level importer, then follow one position observation into a frame. [Full-grid importer](tools/import_barcelona_grid.py) · [Resampler](tools/import_barcelona.py)
+2. **`readRecording`, `replayRoutes`, and `frameAt`** load the data, register handlers, and turn elapsed time into a frame. Follow the WebSocket loop to see how every connection uses the same process start time. [Server](main.go) · [Types and frame lookup](replay.go) · [WebSocket loop](stream.go) · [S3 loader](s3.go)
+3. **`showAt` and `showFrame`** turn a local seek into a segment request and then update the UI. Shared mode feeds the same render function through WebSocket. [Local analysis](web/analysis.js) · [Viewer](web/viewer.js)
+4. Follow one view after `showFrame`. The map projects coordinates, the race banner looks up transitions, the tower reads driver timing, and the comparison calculates the two selected drivers’ results. [Map](web/circuit-map.js) · [Race state](web/race-context.js) · [Timing tower](web/timing-tower.js) · [Comparison and events](web/race-review.js)
 
-- **Where does the authoritative state live?** The prepared recording contains historical positions. The running Go process owns the playback clock. Two servers reading the same S3 object can still disagree about the current frame if they started at different times.
-- **How does the client recover?** After a disconnect, the browser retries and can draw the first full frame it gets. If the process itself restarts, it starts a new timeline because the old start time lived in memory.
-- **What grows with more viewers?** At five frames per second, 200 connected viewers would mean about 1,000 outbound messages per second at full cadence. That's a rough estimate for a future load test. Measure message size and watch CPU and network use to see what actually limits the app.
+## Defend the design in an interview
 
-**Storage verification.** The two-driver full race was uploaded to Moto on localhost and loaded through the same S3 SDK path that Go uses for a bucket. The browser replayed from that object. **Next milestone.** Share one playback timeline across multiple servers using Redis.
+| Question | What a good answer covers |
+| --- | --- |
+| **Why prepare frames offline?** | It moves uneven-sample processing and interpolation off the playback path. Fixed 200 ms steps give direct array lookup. The cost is a larger prepared file, and a change to the import logic requires regeneration. |
+| **Why use JSON and an in-memory recording?** | An inspectable format and one file make local development and testing straightforward. The server avoids disk or S3 reads on each seek. Memory and cold-start work grow with recording size, so a larger race library would motivate independently stored segments and selective loading. |
+| **Why send full WebSocket snapshots?** | Every frame is independently usable when a viewer joins or reconnects. Delta messages would save bytes at the cost of tracking a baseline and recovering when messages are skipped. At five sends per second, 200 viewers means about 1,000 outbound messages per second at full cadence. Use that estimate to plan a load test. |
+| **What happens if things fail?** | Go exits at startup if it cannot load the requested recording. Local analysis pauses when a segment fails and lets the viewer retry. Timing can fail separately while the map still receives frames. A dropped socket reconnects and receives the current snapshot. |
+| **Would two servers with the same S3 object stay synchronized?** | The object supplies the race data. Each process currently has its own playback start time, so independently started replicas can serve different frames. A shared start time or playback state is the next milestone. |
+| **What limits the accuracy?** | The archive provides approximate car locations and lap starts. We estimate positions between nearby samples and use timing records for gaps and rank. The map is suitable for following race progress and comparing timing. |
 
-Update this guide when a milestone ships. Revise the flow and file list in place, and keep the decisions and limits that still apply.
+## Verification and a five-minute demo
+
+| Layer | What it proves |
+| --- | --- |
+| **Importer tests** | Timestamp alignment, interpolation gaps, duplicate handling, sector boundaries, lapped finishers, and race-control transitions. [Importer tests](tools/test_import_barcelona.py) · [Full-grid tests](tools/test_import_barcelona_grid.py) |
+| **Go tests** | Frame selection and wraparound, malformed data, file and S3 reads, segment bounds, compressed timing, and WebSocket joins. The S3 test uses a signed request against a local test endpoint. [Replay tests](replay_test.go) · [S3 tests](s3_test.go) · [Route tests](routes_test.go) · [Segment tests](segments_test.go) · [Stream tests](stream_test.go) |
+| **Playwright and CI** | Browser flows for seeking, comparing drivers, highlighting cars, and reconnecting. CI runs Go formatting and vet checks, the Go tests with the race detector, importer tests, and Chromium tests. The real Barcelona recording was also checked on desktop and mobile. [Browser tests](tests/browser) · [CI](.github/workflows/ci.yml) |
+
+Start the bundled 12-second demo from the repository root with `go run .`. For the full race, use Python 3.9 or newer and access to the OpenF1 archive:
+
+```sh
+python3 tools/import_barcelona_grid.py
+go run . -recording .recordings/barcelona-2026-grid.json
+```
+
+Open [the local viewer](http://127.0.0.1:8080/), show the VSC jump and a backward seek, then switch drivers in the comparison. In the Network tab, point out `/api/session`, a position segment request, and `/api/timing`. Switch to shared playback in two tabs and show how `/ws` gives both tabs the same race time. Use a seek to show local analysis moving independently. For optional S3 setup and the full list of development commands, see the [README](README.md).
