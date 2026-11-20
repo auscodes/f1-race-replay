@@ -2,6 +2,10 @@
 
 [All milestones and verification status](docs/ROADMAP.md) · [Redis and shared playback architecture](docs/REDIS_CLOCK.md) · [Kubernetes, metrics and load testing](docs/DEPLOYMENT.md)
 
+## Start here if the stack is new to you
+
+Read the [beginner stack guide](docs/STACK_GUIDE.md) first. It follows one frame from the S3 SDK through Go, Redis, and WebSockets, then follows one viewer through Kubernetes scaling and a pod failure. It gives you an interview answer for each résumé bullet and points to the implementation and evidence. Use the questions below for deeper follow-ups.
+
 ## “Tell me about your project.”
 
 > I built an interactive replay of the 2026 Barcelona Formula 1 race. It covers all 22 drivers over about 94 minutes. You can jump to a pit stop, follow a driver on the map, and compare lap times or gaps. There’s also a shared mode where viewers connected to the same server follow the same replay clock. The main engineering challenge was turning separate historical feeds into a replay you can seek through quickly while keeping the map, standings, and race events aligned.

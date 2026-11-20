@@ -1,5 +1,7 @@
 # Milestone 3 · Redis shared playback clock
 
+New to Redis or WebSockets? Start with [how a race frame gets to the browser](STACK_GUIDE.md#bullet-1--how-a-race-frame-gets-to-the-browser).
+
 ## What to say in an interview
 
 > Two Go processes can load byte-identical recordings and still show different frames if they started at different times. I use Redis to agree on the start time. The key is scoped to a recording hash, so replicas only share a clock when they agree on what to play. Each server reads the Redis start time and the current Redis time together, then maps that elapsed time onto its own monotonic clock. That gives it a cheap local calculation for every frame.
