@@ -1,0 +1,9 @@
+**
+!Dockerfile
+!*.go
+!go.mod
+!go.sum
+!testdata/
+!testdata/demo.json
+!web/
+!web/**

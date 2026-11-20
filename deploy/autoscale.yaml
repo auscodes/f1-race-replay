@@ -1,0 +1,24 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: replay
+  namespace: f1-replay
+spec:
+  scaleTargetRef:
+    name: replay
+  minReplicaCount: 2
+  maxReplicaCount: 4
+  pollingInterval: 5
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 120
+  triggers:
+    - type: prometheus
+      metricType: AverageValue
+      metadata:
+        serverAddress: http://prometheus.f1-replay.svc.cluster.local:9090
+        query: sum(f1_replay_websocket_connections{job="replay"})
+        threshold: "60"
+        ignoreNullValues: "false"
