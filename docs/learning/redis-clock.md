@@ -1,6 +1,6 @@
 # Redis shared playback clock
 
-New to Redis or WebSockets? Start with [how a race frame gets to the browser](STACK_GUIDE.md#how-a-race-frame-gets-to-the-browser).
+New to Redis or WebSockets? Start with [how a race frame gets to the browser](stack.md#how-a-race-frame-gets-to-the-browser).
 
 ## Clock ownership
 
@@ -32,7 +32,7 @@ flowchart LR
 | **Key plus Pub/Sub** | The key gives late joiners and new replicas a source of truth. Notifications let already-running replicas react promptly. A two-second reconciliation interval bounds how long a missed notification normally takes to catch up after Redis is available. |
 | **Keep the last clock during a Redis outage** | Running replicas can continue playing from the last known epoch. A configured replica that cannot read Redis at startup fails startup. If Redis loses the epoch key, the next successful read creates a new timeline. Redis persistence determines whether the epoch survives a Redis restart. |
 
-[Implementation](../replay_clock.go) · [WebSocket loop](../stream.go) · [Redis delivery semantics](https://redis.io/docs/latest/develop/pubsub/#delivery-semantics)
+[Implementation](../../replay_clock.go) · [WebSocket loop](../../stream.go) · [Redis delivery semantics](https://redis.io/docs/latest/develop/pubsub/#delivery-semantics)
 
 ## Verify locally
 
@@ -44,4 +44,4 @@ The Redis integration tests start two HTTP servers with distinct client connecti
 REPLAY_TEST_REDIS_URL=redis://127.0.0.1:6379/0 go test -race ./...
 ```
 
-[Run instructions](../README.md#shared-playback-across-servers) · [Redis integration tests](../replay_clock_test.go) · [All milestones](ROADMAP.md)
+[Run instructions](../CONFIGURATION.md#shared-playback-across-servers) · [Redis integration tests](../../replay_clock_test.go) · [All milestones](milestones.md)
