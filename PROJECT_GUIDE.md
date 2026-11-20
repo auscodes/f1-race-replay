@@ -8,7 +8,17 @@ F1 Race Replay is an interactive map and timing dashboard for a recorded Formula
 
 Here’s a short way to introduce it in an interview:
 
-> I built a historical F1 replay with two viewing modes. One lets you study a race on your own. The other keeps viewers on a shared server clock. I prepared the location and timing data once so the viewer can jump straight to any moment. The main design decision was to use position snapshots for the map and separate timing records for the standings, with both keyed to the same race time.
+> F1 Race Replay lets fans study a recorded race on their own or watch along on a shared clock. It prepares the archive once so viewers can jump straight to any moment. Position snapshots draw the map, and timing records drive the standings. Both use the same race time.
+
+## User stories and checks
+
+A user story names the viewer, their goal, and why it matters. The checks below make each story concrete during a demo. Use them to establish requirements before drawing the system. [Atlassian user stories guide](https://www.atlassian.com/agile/project-management/user-stories)
+
+| Viewer goal | What counts as working |
+| --- | --- |
+| **Review a race decision.** As a fan studying a pit stop or Virtual Safety Car, I want to jump to the moment and compare two drivers so I can see how their races changed. | Pick an event and land on the first applicable frame. Seek back and see the earlier race state. Change either comparison driver while the playhead stays put. |
+| **Follow the whole field.** As a viewer following a driver outside the lead battle, I want their position, gap, and tyre information so I can understand how they are doing. | All 22 drivers appear in the standings. Selecting one highlights their map marker when a position is available. A classified finisher’s flag appears at their own crossing. |
+| **Watch together.** As a fan joining an ongoing replay, I want to arrive at the same race moment as the other viewers so we can discuss what is happening. | Two tabs on the same server advance on its clock. A late join or reconnect receives the current snapshot. A viewer in local analysis can seek independently. |
 
 ## Architecture and responsibilities
 
@@ -23,13 +33,6 @@ flowchart LR
     B --> M["Map and race controls"]
     B --> T["Leaderboard, race events and comparison"]
 ```
-
-| Technology | What you need to explain |
-| --- | --- |
-| **Python** | Runs offline to download, normalize, and join data. A generated recording can replay independently of the archive. |
-| **Go and `net/http`** | Load one recording at startup and serve the page, JSON endpoints, and WebSocket. Each connected viewer has a send loop. |
-| **JSON and S3** | JSON is the contract between Python, Go, and the browser. S3 is an optional way to store and retrieve the prepared file by bucket and key. |
-| **JavaScript and Canvas** | JavaScript owns the local playhead, looks up timing, and updates the interface. Canvas draws all the cars on one circuit. |
 
 ### Clocks and data ownership
 
@@ -62,20 +65,15 @@ Go can read the bundled synthetic demo, a prepared local file, or an `s3://bucke
 | **WebSocket `/ws`** | Shared playback starts with an HTTP upgrade and keeps the connection open. Go sends the current frame immediately, then pushes full snapshots on the server’s clock. Each message includes `sequence`, `elapsedMs`, and `positions`. |
 | **HTTP `GET /api/timing`** | After the first map frame, the full-grid viewer requests the detailed timing history. Go encodes it once and can serve a gzip version to browsers that accept it. |
 
-**Why these delivery methods?** Local analysis knows the exact time it wants, so it can request that segment directly and move the playhead independently. Shared playback needs the server to push the changing position to everyone following it. A WebSocket gives it a persistent connection. Server-Sent Events could also carry the one-way stream. WebSockets leave room for two-way controls in a future version.
+Local analysis uses HTTP to request the exact segment it needs. Shared playback uses a persistent connection so the server can push changing positions. Server-Sent Events could also carry a one-way stream. WebSockets leave room for two-way controls in a future version.
 
-**What happens on a slow connection?** The full-grid file is about 24 MB. Metadata plus the first position segment total about 100 KB. The separate timing response is about 400 KB with gzip. In local analysis the browser keeps up to five segments, reuses an in-flight request for the same segment, and prefetches the next one near the boundary. After a quick series of seeks, only the latest request can update the displayed frame. During shared playback Go reads the current frame on every send, so a slow connection can skip older snapshots and catch up.
+The browser keeps up to five segments, shares requests for the same in-flight segment, and prefetches near a segment boundary. A failed segment pauses local playback and can be retried. Detailed timing can fail independently of the map. A dropped WebSocket reconnects and resumes at the server’s current time.
 
 ## Trace one moment without opening the code
 
 Pick the first **Virtual Safety Car deployed** entry in Race events:
 
-1. The event is at **3,335,146 ms** after lights out. The browser rounds up to **3,335,200 ms**, the first frame at or after the event.
-2. Divide that time by 200 ms to get **frame 16,676**. With 100 frames per segment, request **segment 166** if it is absent from the cache. Read frame **76** within that segment. Segment and frame offsets start at zero.
-3. The viewer sends the car positions to Canvas and passes the same frame time to the timing tower, map details, race-state banner, and lap comparison.
-4. The race-state lookup finds the latest transition at or before that time and displays **Virtual Safety Car**. A backward seek before deployment selects the previous **Green flag** state. The ending warning and the track-wide clear message take effect at their own recorded times.
-
-The key here is that a seek, a late join, and ordinary playback can all render from a timestamp. Each view can arrive at the same answer even if it skipped earlier frames.
+The event is about **55:35** into the race. The browser rounds its timestamp up to the next 200 ms frame and uses that frame’s index to request **segment 166** if needed. Go returns the segment’s starting index so the browser can pick the right frame. The map draws the positions and the race-state banner finds the most recent transition at that time. Seek backward before deployment to see **Green flag** again. A seek and a late join both render directly from a timestamp.
 
 ### What the dashboard derives
 
@@ -93,16 +91,43 @@ The key here is that a seek, a late join, and ordinary playback can all render f
 3. **`showAt` and `showFrame`** turn a local seek into a segment request and then update the UI. Shared mode feeds the same render function through WebSocket. [Local analysis](web/analysis.js) · [Viewer](web/viewer.js)
 4. Follow one view after `showFrame`. The map projects coordinates, the race banner looks up transitions, the tower reads driver timing, and the comparison calculates the two selected drivers’ results. [Map](web/circuit-map.js) · [Race state](web/race-context.js) · [Timing tower](web/timing-tower.js) · [Comparison and events](web/race-review.js)
 
-## Defend the design in an interview
+## Practice for three kinds of interview questions
 
-| Question | What a good answer covers |
-| --- | --- |
-| **Why prepare frames offline?** | It moves uneven-sample processing and interpolation off the playback path. Fixed 200 ms steps give direct array lookup. The cost is a larger prepared file, and a change to the import logic requires regeneration. |
-| **Why use JSON and an in-memory recording?** | An inspectable format and one file make local development and testing straightforward. The server avoids disk or S3 reads on each seek. Memory and cold-start work grow with recording size, so a larger race library would motivate independently stored segments and selective loading. |
-| **Why send full WebSocket snapshots?** | Every frame is independently usable when a viewer joins or reconnects. Delta messages would save bytes at the cost of tracking a baseline and recovering when messages are skipped. At five sends per second, 200 viewers means about 1,000 outbound messages per second at full cadence. Use that estimate to plan a load test. |
-| **What happens if things fail?** | Go exits at startup if it cannot load the requested recording. Local analysis pauses when a segment fails and lets the viewer retry. Timing can fail separately while the map still receives frames. A dropped socket reconnects and receives the current snapshot. |
-| **Would two servers with the same S3 object stay synchronized?** | The object supplies the race data. Each process currently has its own playback start time, so independently started replicas can serve different frames. A shared start time or playback state is the next milestone. |
-| **What limits the accuracy?** | The archive provides approximate car locations and lap starts. We estimate positions between nearby samples and use timing records for gaps and rank. The map is suitable for following race progress and comparing timing. |
+Use the same project in three ways. In a **project deep dive**, explain a decision you can trace and verify. In **system design**, ask what the product needs to support, propose a baseline, and follow the biggest trade-off. In a **behavioral interview**, use STAR (Situation, Task, Action, Result) and describe your own role and evidence. [Microsoft technical interviewing](https://careers.microsoft.com/v2/global/en/hiring-tips/technical-interviewing.html) · [Amazon SDE interview prep](https://amazon.jobs/content/en/how-we-hire/sde-ii-interview-prep?es_id=365f5ed5f2) · [Hello Interview design framework](https://www.hellointerview.com/learn/system-design/in-a-hurry/delivery)
+
+### Project deep dive — practice these follow-ups aloud
+
+| Opening question | Answer in your own words | Follow-up to be ready for |
+| --- | --- | --- |
+| **Why prepare frames offline?** | Align and interpolate the archive once. Fixed intervals give direct array lookup and avoid recomputing the map for every viewer. The trade-off is a larger generated file and the need to regenerate after importer changes. | **What if the archive has a gap?** The importer interpolates between observations at most a second apart. Across a longer gap, the frame omits that driver. |
+| **What makes a seek correct?** | The browser locates the segment for the selected time. The same frame time drives the map, standings, and race state. | **What if an older seek response comes back last?** Each seek increments a generation counter. The browser checks it after awaiting the segment and discards outdated results. To test it directly, delay the first response, complete the second, and assert that the final playhead and car positions still reflect the second. |
+| **How did you keep startup responsive?** | The full-grid file is about 24 MB. Metadata and the first position segment total about 100 KB. Detailed timing arrives after the map has a frame, at about 400 KB with gzip. The trade-off is that the standings can appear a little later. | **Why 20-second segments?** Shorter segments reduce how much data you need for a cold seek. Longer ones reduce requests during continuous playback. To evaluate a different size, measure first-frame time, seek latency, and requests per minute. |
+| **Why use full WebSocket frames?** | A late joiner or reconnecting viewer can render immediately from one snapshot. If the send loop falls behind, it picks the current frame. | **Would deltas help?** They can reduce repeated coordinates, but then the client needs a baseline and a way to recover after skipping updates. |
+| **How do you know the leaderboard is right?** | The location feed draws the map. Recorded race order and gaps provide standings. A car can be physically ahead on the circuit while a lap down. | **Can every finish be timed accurately?** Classified finishers get an estimated crossing from their recorded final lap. Retirement labels appear with the final classification because the archive’s retirement timestamps are incomplete. |
+
+### System design — change one constraint
+
+Practice this prompt aloud: **“Design this replay for multiple server replicas and 200 concurrent shared viewers.”**
+
+1. **Clarify the requirement.** Can users pause the shared replay or only watch it? How far apart can two viewers be? Should the shared timeline survive a restart? Is 200 viewers the total or per race? Pick explicit assumptions with the interviewer.
+2. **Draw the current design first.** Keep the prepared recording, HTTP segment requests, and WebSocket snapshots. Identify the break at two replicas. The same recording supplies the same frames, but each Go process currently picks them using its own start time.
+3. **Propose the smallest change.** Agree on a race ID, recording version, and shared playback start time. Each replica can compute the frame locally using that reference. Explain what happens if a replica joins late, has a skewed clock, or loses access to shared state. If viewers can control shared playback later, also discuss who can update it and how updates are ordered.
+4. **Estimate and verify.** At five frames per second, 200 viewers means about 1,000 outbound snapshots per second before reconnects or skipped frames. Multiply by measured frame bytes to estimate bandwidth. Measure two viewers’ playhead difference across replicas, first-frame latency, and reconnect behavior. These are design exercises for Milestone 3.
+
+### Behavioral — prepare two STAR stories you can substantiate
+
+Use the evidence below and fill in the **Action** with what you did personally: the requirement you identified, the decision you made, the code you worked on, or the way you verified the result. Describe Codex’s implementation help accurately when discussing your role. Use project outcomes and checks as evidence. [Amazon STAR guidance](https://amazon.jobs/content/en-gb/faq/interview-prep)
+
+| Prompt | Situation and task | Action to put in your own words | Result you can verify |
+| --- | --- | --- | --- |
+| **Tell me about a time you changed the scope after seeing an initial implementation.** | The first historical replay centered on Hamilton and Russell. Studying the race also meant seeing the whole field and following individual finishes. | Explain what you noticed, how you described the full-grid experience, and which behavior you checked. Expect “What did you prioritize and why?” | The dashboard expanded to 22 drivers. Real-race checks confirmed separate crossing flags, lapped finishers, and the final order. [Full-grid change](https://github.com/auscodes/f1-race-replay/pull/8) |
+| **Tell me about a trade-off you made for performance.** | A 50-second clip grew into a full race. The question became how much data the viewer needed before showing the first frame. | Explain what you wanted to protect, why the map and timing could load separately, and which measurement you can interpret. Expect “How would you choose the segment size?” | The first metadata and position responses totaled about 100 KB for a roughly 24 MB recording. The timing response was fetched separately. [Full-grid delivery change](https://github.com/auscodes/f1-race-replay/pull/8) |
+
+### A 25-minute practice session
+
+- **5 minutes:** Give the project pitch from memory. Name one user, one action, and the outcome it enables. Draw the three boxes for importer, Go server, and browser. Trace which clock each playback mode uses.
+- **10 minutes:** Demo the VSC jump and step through one deep-dive answer. Have someone interrupt with a failure case. If you get stuck, open just the linked code for that path, then explain it again without looking.
+- **10 minutes:** Answer the replica design prompt and one STAR prompt aloud. Check that each answer includes a concrete decision, its downside, and evidence or a test. Separate what shipped from what you would build next.
 
 ## Verification and a five-minute demo
 
