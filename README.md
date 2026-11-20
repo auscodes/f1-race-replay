@@ -18,6 +18,21 @@ The server listens on `127.0.0.1:8080` by default. Pass `-addr` to use a differe
 go run . -addr 127.0.0.1:8090
 ```
 
+## Historical replay
+
+The Barcelona clip follows Lewis Hamilton and George Russell around Hamilton's final stop under the Virtual Safety Car at the 2026 Barcelona-Catalunya Grand Prix. Generate it with Python 3.9 or newer and access to the [OpenF1 archive](https://openf1.org/docs/#location).
+
+```sh
+python3 tools/import_barcelona.py
+go run . -recording .recordings/barcelona-2026.json
+```
+
+For a recording already stored in S3, pass its object URI. Configure the bucket's region and AWS credentials with permission to read that object. [AWS SDK configuration](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configure-gosdk.html)
+
+```sh
+go run . -recording s3://your-bucket/clips/barcelona-2026.json
+```
+
 ## Interfaces
 
 | Endpoint | Purpose |
@@ -31,6 +46,7 @@ go run . -addr 127.0.0.1:8090
 ```sh
 go vet ./...
 go test -race ./...
+python3 -m unittest discover -s tools
 ```
 
 The browser tests use Node.js 24 and run the app in Chromium.
@@ -41,4 +57,4 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-Both test suites run in GitHub Actions. The Go job also checks formatting. For the architecture and a tour of the code, see the [project guide](PROJECT_GUIDE.md).
+The Go, importer, and browser suites run in GitHub Actions. The Go job also checks formatting. For the architecture and a tour of the code, see the [project guide](PROJECT_GUIDE.md).
