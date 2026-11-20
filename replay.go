@@ -22,6 +22,28 @@ type recordingSource struct {
 	ClipStartUTC string `json:"clipStartUtc"`
 }
 
+type timedValue struct {
+	ElapsedMS int64  `json:"elapsedMs"`
+	Value     string `json:"value"`
+}
+
+type driverTiming struct {
+	Laps      []timedValue `json:"laps"`
+	Positions []timedValue `json:"positions"`
+	Gaps      []timedValue `json:"gaps"`
+}
+
+type raceEvent struct {
+	ElapsedMS int64  `json:"elapsedMs"`
+	Label     string `json:"label"`
+	Kind      string `json:"kind"`
+}
+
+type raceTimeline struct {
+	Events  []raceEvent             `json:"events"`
+	Drivers map[string]driverTiming `json:"drivers"`
+}
+
 type session struct {
 	Name        string            `json:"name"`
 	Caption     string            `json:"caption,omitempty"`
@@ -30,6 +52,9 @@ type session struct {
 	Track       []point           `json:"track"`
 	DurationMS  int64             `json:"durationMs"`
 	Source      *recordingSource  `json:"source,omitempty"`
+	IntervalMS  int64             `json:"intervalMs"`
+	SegmentSize int64             `json:"segmentSize"`
+	Timeline    *raceTimeline     `json:"timeline,omitempty"`
 }
 
 type recording struct {
@@ -64,6 +89,8 @@ func loadRecording(data []byte) (recording, error) {
 		}
 	}
 	clip.Session.DurationMS = int64(len(clip.Frames)) * clip.IntervalMS
+	clip.Session.IntervalMS = clip.IntervalMS
+	clip.Session.SegmentSize = max(1, 60_000/clip.IntervalMS)
 	return clip, nil
 }
 

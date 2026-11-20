@@ -16,13 +16,28 @@
     <main>
       <header class="session-title">
         <h1 id="circuit-name">Race replay</h1>
-        <p><span id="recording-caption">Synthetic recording</span> <span class="caption-separator" aria-hidden="true">/</span> Shared playback</p>
+        <p><span id="recording-caption">Synthetic recording</span> <span class="caption-separator" aria-hidden="true">/</span> <span id="playback-mode">Shared playback</span> <a id="mode-link" hidden></a></p>
       </header>
       <div class="replay-layout">
-        <section class="map" aria-label="Circuit map">
+        <section aria-label="Circuit map">
+          <div class="map">
           <canvas id="circuit" width="800" height="480" role="img" aria-label="Circuit map with car positions">
             Current car positions are also available in the frame inspector.
           </canvas>
+          </div>
+          <section id="analysis-controls" class="analysis-controls" aria-labelledby="timeline-heading" hidden>
+            <h2 id="timeline-heading">Race timeline</h2>
+            <div class="scrubber">
+              <input id="scrub" type="range" min="0" max="0" value="0" aria-label="Replay time">
+              <div id="event-marks" aria-hidden="true"></div>
+            </div>
+            <div class="playback-controls">
+              <button id="play" type="button">Play</button>
+              <label>Speed <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option></select></label>
+              <label>Hamilton lap <select id="lap-jump"></select></label>
+              <label>Race event <select id="event-jump"></select></label>
+            </div>
+          </section>
         </section>
         <section class="timing" aria-labelledby="playback-heading">
           <h2 id="playback-heading">Playback</h2>

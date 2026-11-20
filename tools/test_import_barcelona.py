@@ -5,12 +5,31 @@ from import_barcelona import (
     Sample,
     build_recording,
     parse_samples,
+    race_window,
     resample,
     timestamp_ms,
+    timing_series,
 )
 
 
 class ImportTests(unittest.TestCase):
+    def test_race_window_extends_until_both_drivers_finish(self):
+        start = "2026-06-14T13:00:00+00:00"
+        control = [{"date": start, "message": "SESSION STARTED"}]
+        laps = {"44": [{"date_start": start, "lap_duration": 81.1}],
+                "63": [{"date_start": start, "lap_duration": 83.2}]}
+        self.assertEqual(race_window(control, laps), (start, 83_200))
+
+    def test_timing_series_uses_race_clock_and_optional_seed(self):
+        start = timestamp_ms("2026-06-14T13:00:00Z")
+        rows = [{"date": "2026-06-14T12:59:59Z", "value": 2},
+                {"date": "2026-06-14T13:00:01Z", "value": 1},
+                {"date": "2026-06-14T13:00:03Z", "value": 3}]
+        sample = {"elapsedMs": 1000, "value": "1"}
+        self.assertEqual(timing_series(rows, "date", "value", start, 3000), [sample])
+        self.assertEqual(timing_series(rows, "date", "value", start, 3000, seed=True),
+                         [{"elapsedMs": 0, "value": "2"}, sample])
+
     def test_timestamp_uses_one_utc_clock(self):
         self.assertEqual(timestamp_ms("2026-06-14T13:00:00.123Z"),
                          timestamp_ms("2026-06-14T15:00:00.123+02:00"))

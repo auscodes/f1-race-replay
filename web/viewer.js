@@ -1,3 +1,5 @@
+import { startAnalysis } from "./analysis.js";
+
 const canvas = document.querySelector("#circuit");
 const connection = document.querySelector("#connection");
 const elapsed = document.querySelector("#elapsed");
@@ -110,6 +112,7 @@ async function start() {
 
   const drivers = document.querySelector("#drivers");
   const colors = new Map();
+  const timing = new Map();
   session.drivers.forEach((driver, i) => {
     const color = palette[i % palette.length];
     colors.set(driver, color);
@@ -119,6 +122,13 @@ async function start() {
     marker.style.backgroundColor = color;
     marker.setAttribute("aria-hidden", "true");
     item.append(marker, session.driverNames?.[driver] || `Car ${driver}`);
+    if (session.timeline?.drivers?.[driver]) {
+      item.className = "driver-data";
+      const details = document.createElement("small");
+      details.textContent = "Timing unavailable";
+      timing.set(driver, details);
+      item.append(details);
+    }
     drivers.append(item);
   });
 
@@ -132,6 +142,18 @@ async function start() {
     sequence.textContent = frame.sequence;
     progress.value = frame.elapsedMs;
     draw(frame.positions);
+    for (const [driver, details] of timing) {
+      const data = session.timeline.drivers[driver];
+      const at = (records) => records?.findLast((record) => record.elapsedMs <= frame.elapsedMs);
+      const lap = at(data.laps)?.value;
+      const position = at(data.positions)?.value;
+      const gap = at(data.gaps);
+      const hasGap = gap && frame.elapsedMs - gap.elapsedMs <= 15_000 && gap.value !== "Unavailable";
+      const gapLabel = hasGap ? (Number.isFinite(Number(gap.value)) ? `${gap.value}s` : gap.value) : "—";
+      const gapText = position === "1" ? "Leader" : `Gap to leader ${gapLabel}`;
+      const missing = frame.positions.some((car) => car.driver === driver) ? "" : " · Map position unavailable";
+      details.textContent = `P${position ?? "—"} · Lap ${lap ?? "—"} · ${gapText}${missing}`;
+    }
   }
 
   function captureFrame() {
@@ -152,12 +174,32 @@ async function start() {
     }
   });
 
-  connection.textContent = "Connecting to replay";
-  connect((frame) => {
+  function receiveFrame(frame) {
+    capture.disabled = false;
     latestFrame = frame;
     if (!inspector.open) showFrame(frame);
     else if (!capturedFrame) captureFrame();
-  });
+  }
+
+  if (session.timeline) {
+    const shared = new URLSearchParams(location.search).get("mode") === "shared";
+    const link = document.querySelector("#mode-link");
+    link.href = shared ? "?mode=analysis" : "?mode=shared";
+    link.textContent = shared ? "Analyze on your own" : "Join shared playback";
+    link.hidden = false;
+    if (!shared) {
+      document.querySelector("#playback-mode").textContent = "Local analysis";
+      progress.hidden = true;
+      startAnalysis(session, receiveFrame, (message, state = "loading") => {
+        if (connection.dataset.state === state && connection.textContent === message) return;
+        connection.dataset.state = state;
+        connection.textContent = message;
+      });
+      return;
+    }
+  }
+  connection.textContent = "Connecting to replay";
+  connect(receiveFrame);
 }
 
 start().catch(() => {

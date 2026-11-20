@@ -52,6 +52,9 @@ p, h1, h2, h3 { margin: 0; }
 }
 .session-title p { margin-block-start: 13px; color: var(--muted); font-size: .92rem; }
 .caption-separator { margin-inline: .4em; color: var(--accent); }
+#mode-link { margin-inline-start: .75em; color: var(--accent); text-underline-offset: .2em; }
+main:has(#analysis-controls:not([hidden])) .session-title { padding-block: clamp(24px, 4vw, 42px) 20px; }
+main:has(#analysis-controls:not([hidden])) .session-title h1 { font-size: clamp(2.3rem, 5.5vw, 4rem); }
 
 .replay-layout {
   display: grid;
@@ -68,6 +71,30 @@ p, h1, h2, h3 { margin: 0; }
   overflow: hidden;
 }
 .map canvas { display: block; width: 100%; height: auto; aspect-ratio: 5 / 3; }
+
+.analysis-controls { margin-top: 20px; }
+.analysis-controls h2 { font-size: .95rem; }
+.scrubber { margin-block: 6px 12px; padding-inline: 1px; }
+.scrubber input { display: block; width: 100%; min-height: 26px; margin: 0; accent-color: var(--accent); }
+#event-marks { position: relative; height: 6px; margin-inline: 8px; }
+#event-marks span { position: absolute; height: 6px; width: 2px; background: var(--accent); }
+#event-marks .vsc { background: var(--muted); }
+.playback-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 14px; }
+.playback-controls label { display: grid; gap: 4px; font-size: .75rem; color: var(--muted); min-width: 0; }
+.playback-controls select, .playback-controls button {
+  min-height: 36px;
+  max-width: 100%;
+  margin: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: .82rem;
+}
+.playback-controls button { min-width: 68px; color: var(--paper); background: var(--accent); }
+.playback-controls button:hover:enabled { color: var(--paper); background: #762d20; }
 
 .timing { border-top: 2px solid var(--ink); padding-top: 14px; min-width: 0; }
 .timing h2 { font-size: 1rem; }
@@ -93,6 +120,7 @@ progress {
 progress::-webkit-progress-bar { background: var(--rule); }
 progress::-webkit-progress-value { background: var(--accent); }
 progress::-moz-progress-bar { background: var(--accent); }
+progress[hidden] { display: none; }
 .frame-number {
   display: flex;
   justify-content: space-between;
@@ -106,6 +134,8 @@ progress::-moz-progress-bar { background: var(--accent); }
 .timing h3 { border-top: 1px solid var(--rule); padding-top: 13px; font-size: .92rem; }
 .drivers { display: grid; gap: 8px; margin-block: 11px 16px; padding-inline-start: 0; list-style: none; }
 .drivers li { display: flex; align-items: center; gap: 8px; font-size: .88rem; }
+.drivers .driver-data { display: grid; grid-template-columns: auto 1fr; }
+.driver-data small { grid-column: 2; color: var(--muted); font-variant-numeric: tabular-nums; }
 .driver-marker { width: 11px; height: 11px; border: 1px solid var(--ink); border-radius: 50%; }
 
 details { padding-block: 12px; border-block: 1px solid var(--rule); }

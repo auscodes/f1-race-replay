@@ -73,7 +73,7 @@ def resample(samples, ticks):
             yield None
 
 
-def build_recording(track, observations):
+def build_recording(track, observations, start_utc=CLIP_START, length_ms=CLIP_LENGTH_MS):
     if len(track) < 3:
         raise ValueError("the reference lap needs at least three position samples")
     left, right = min(point.x for point in track), max(point.x for point in track)
@@ -90,8 +90,8 @@ def build_recording(track, observations):
             "y": round(MAP_HEIGHT / 2 - (y - center_y) * scale, 2),
         }
 
-    start = timestamp_ms(CLIP_START)
-    ticks = range(start, start + CLIP_LENGTH_MS, INTERVAL_MS)
+    start = timestamp_ms(start_utc)
+    ticks = range(start, start + length_ms, INTERVAL_MS)
     frames = [[] for _ in ticks]
     for driver in DRIVERS:
         positions = list(resample(observations[driver], ticks))
@@ -108,11 +108,17 @@ def build_recording(track, observations):
             "drivers": list(DRIVERS),
             "driverNames": DRIVERS,
             "track": [map_point(sample.x, sample.y) for sample in track],
-            "source": {"provider": "OpenF1", "sessionKey": SESSION_KEY, "clipStartUtc": CLIP_START},
+            "source": {"provider": "OpenF1", "sessionKey": SESSION_KEY, "clipStartUtc": start_utc},
         },
         "intervalMs": INTERVAL_MS,
         "frames": frames,
     }
+
+
+def fetch_rows(endpoint, filters=""):
+    sleep(0.35)  # Respect OpenF1's public request limit.
+    with urlopen(f"https://api.openf1.org/v1/{endpoint}?session_key={SESSION_KEY}{filters}", timeout=35) as response:
+        return json.load(response)
 
 
 def fetch_positions(driver, start, end):
@@ -120,10 +126,57 @@ def fetch_positions(driver, start, end):
         return quote((EPOCH + time_ms * MILLISECOND).replace(tzinfo=None).isoformat(timespec="milliseconds"))
 
     # Include samples on either side of the window for interpolation at its edges.
-    url = (f"https://api.openf1.org/v1/location?session_key={SESSION_KEY}&driver_number={driver}"
-           f"&date%3E{date_filter(start - MAX_GAP_MS)}&date%3C{date_filter(end + MAX_GAP_MS)}")
-    with urlopen(url, timeout=25) as response:
-        return parse_samples(json.load(response))
+    rows = []
+    window = 15 * 60_000
+    for low in range(start, end, window):
+        high = min(end, low + window)
+        rows.extend(fetch_rows("location", f"&driver_number={driver}"
+                               f"&date%3E{date_filter(low - MAX_GAP_MS)}&date%3C{date_filter(high + MAX_GAP_MS)}"))
+    return parse_samples(rows)
+
+
+def timing_series(rows, date_key, field, start, length, seed=False):
+    samples = [(timestamp_ms(row[date_key]) - start,
+                "Unavailable" if row[field] is None else str(row[field]))
+               for row in rows if row.get(date_key)]
+    samples.sort(key=lambda sample: sample[0])
+    # Seed race position with the last sample before the start, such as grid order.
+    series = {max(0, elapsed): value for elapsed, value in samples
+              if elapsed < length and (seed or elapsed >= 0)}
+    return [{"elapsedMs": elapsed, "value": value} for elapsed, value in series.items()]
+
+
+def race_timeline(control, laps, start, length):
+    events = []
+    drivers = {}
+    for driver, name in DRIVERS.items():
+        filters = f"&driver_number={driver}"
+        drivers[driver] = {
+            "laps": timing_series(laps[driver], "date_start", "lap_number", start, length),
+            "positions": timing_series(fetch_rows("position", filters), "date", "position", start, length, seed=True),
+            "gaps": timing_series(fetch_rows("intervals", filters), "date", "gap_to_leader", start, length),
+        }
+        stops = sorted(fetch_rows("pit", filters), key=lambda stop: timestamp_ms(stop["date"]))
+        for index, stop in enumerate(stops, 1):
+            elapsed = timestamp_ms(stop["date"]) - start
+            if 0 <= elapsed < length:
+                events.append({"elapsedMs": elapsed, "kind": "pit",
+                               "label": f"{name.split()[-1]} pit stop {index}"})
+
+    labels = {"VSC DEPLOYED": "Virtual Safety Car deployed", "VSC ENDING": "Virtual Safety Car ending"}
+    for row in control:
+        elapsed = timestamp_ms(row["date"]) - start
+        if row["message"] in labels and 0 <= elapsed < length:
+            events.append({"elapsedMs": elapsed, "kind": "vsc", "label": labels[row["message"]]})
+    return {"drivers": drivers, "events": sorted(events, key=lambda event: event["elapsedMs"])}
+
+
+def race_window(control, laps):
+    start_utc = next(row["date"] for row in control if row["message"] == "SESSION STARTED")
+    end = max(timestamp_ms(lap["date_start"]) + round(lap["lap_duration"] * 1000)
+              for driver_laps in laps.values() for lap in driver_laps
+              if lap.get("date_start") and lap.get("lap_duration"))
+    return start_utc, end - timestamp_ms(start_utc)
 
 
 def write_recording(output, recording):
@@ -141,23 +194,35 @@ def write_recording(output, recording):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=Path(".recordings/barcelona-2026.json"))
+    parser.add_argument("--full", action="store_true", help="import the full two-driver race")
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    output = args.output or Path(".recordings/barcelona-2026-full.json" if args.full else
+                                ".recordings/barcelona-2026.json")
 
-    start = timestamp_ms(CLIP_START)
     try:
-        observations = {}
-        for driver in DRIVERS:
-            observations[driver] = fetch_positions(driver, start, start + CLIP_LENGTH_MS)
-            sleep(0.4)  # Keep the archive requests within OpenF1's public rate limit.
+        start_utc, length = CLIP_START, CLIP_LENGTH_MS
+        if args.full:
+            control = fetch_rows("race_control")
+            laps = {driver: fetch_rows("laps", f"&driver_number={driver}") for driver in DRIVERS}
+            start_utc, length = race_window(control, laps)
+        start = timestamp_ms(start_utc)
+        observations = {driver: fetch_positions(driver, start, start + length) for driver in DRIVERS}
         track_start, track_end = timestamp_ms(TRACK_START), timestamp_ms(TRACK_END)
         track = [sample for sample in fetch_positions("63", track_start, track_end)
                  if track_start <= sample.time_ms <= track_end]
-        recording = build_recording(track, observations)
-        write_recording(args.output, recording)
-    except (OSError, ValueError, TypeError, KeyError) as error:
+        recording = build_recording(track, observations, start_utc, length)
+        if args.full:
+            recording["session"]["caption"] = "Hamilton vs Russell · Full race"
+            recording["session"]["timeline"] = race_timeline(control, laps, start, length)
+        write_recording(output, recording)
+    except (OSError, ValueError, TypeError, KeyError, StopIteration) as error:
         parser.exit(1, f"Import failed: {error}\n")
-    print(f"Wrote {len(recording['frames'])} frames to {args.output}")
+    print(f"Wrote {len(recording['frames'])} frames to {output}")
+    if args.full:
+        for driver, name in DRIVERS.items():
+            missing = sum(all(car["driver"] != driver for car in frame) for frame in recording["frames"])
+            print(f"{name}: position unavailable in {missing} frames")
 
 
 if __name__ == "__main__":

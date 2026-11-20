@@ -27,6 +27,15 @@ python3 tools/import_barcelona.py
 go run . -recording .recordings/barcelona-2026.json
 ```
 
+Import the full Hamilton–Russell race to use the timeline, lap and race-event jumps, and driver timing.
+
+```sh
+python3 tools/import_barcelona.py --full
+go run . -recording .recordings/barcelona-2026-full.json
+```
+
+Full-race recordings open in local analysis mode. Use **Join shared playback** to follow the server's clock over WebSocket.
+
 For a recording already stored in S3, pass its object URI. Configure the bucket's region and AWS credentials with permission to read that object. [AWS SDK configuration](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configure-gosdk.html)
 
 ```sh
@@ -39,6 +48,7 @@ go run . -recording s3://your-bucket/clips/barcelona-2026.json
 | --- | --- |
 | `GET /` | Browser viewer |
 | `GET /api/session` | Circuit geometry, driver IDs, and clip duration in JSON |
+| `GET /api/segments/{index}` | About one minute of positions for local playback and seeking |
 | `GET /ws` | WebSocket stream of timestamped position snapshots |
 
 ## Development
