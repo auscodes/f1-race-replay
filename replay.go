@@ -95,6 +95,7 @@ type session struct {
 }
 
 type recording struct {
+	id         string
 	Session    session      `json:"session"`
 	IntervalMS int64        `json:"intervalMs"`
 	Frames     [][]position `json:"frames"`

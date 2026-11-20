@@ -9,6 +9,8 @@ export default defineConfig({
   webServer: {
     command: `go run . -addr ${address}`,
     url: baseURL,
+    // Allow a cold Go module download and build before probing readiness.
+    timeout: 120_000,
     reuseExistingServer: false,
   },
 });

@@ -17,7 +17,7 @@ func TestSessionRouteReturnsOnlySessionMetadata(t *testing.T) {
 	}
 	response := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/session", nil)
-	replayRoutes(clip, time.Now()).ServeHTTP(response, req)
+	replayRoutes(clip, newPlaybackClock(time.Now())).ServeHTTP(response, req)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("session status = %d, want 200", response.Code)
@@ -39,7 +39,7 @@ func TestSessionRouteReturnsOnlySessionMetadata(t *testing.T) {
 func TestWebSocketRouteRequiresUpgrade(t *testing.T) {
 	response := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
-	replayRoutes(recording{}, time.Now()).ServeHTTP(response, req)
+	replayRoutes(recording{}, newPlaybackClock(time.Now())).ServeHTTP(response, req)
 	if response.Code != http.StatusUpgradeRequired {
 		t.Fatalf("plain GET /ws status = %d, want 426", response.Code)
 	}
@@ -63,7 +63,7 @@ func TestGridTimingLoadsSeparately(t *testing.T) {
 			Outcome:   &raceOutcome{ElapsedMS: 250, Status: "finished", Position: 1},
 		}},
 	}
-	mux := replayRoutes(clip, time.Now())
+	mux := replayRoutes(clip, newPlaybackClock(time.Now()))
 
 	response := httptest.NewRecorder()
 	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/session", nil))

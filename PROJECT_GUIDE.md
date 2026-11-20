@@ -1,5 +1,7 @@
 # F1 Race Replay — Interview answers
 
+[All milestones and verification status](docs/ROADMAP.md) · [Redis and shared playback architecture](docs/REDIS_CLOCK.md) · [Kubernetes, metrics and load testing](docs/DEPLOYMENT.md)
+
 ## “Tell me about your project.”
 
 > I built an interactive replay of the 2026 Barcelona Formula 1 race. It covers all 22 drivers over about 94 minutes. You can jump to a pit stop, follow a driver on the map, and compare lap times or gaps. There’s also a shared mode where viewers connected to the same server follow the same replay clock. The main engineering challenge was turning separate historical feeds into a replay you can seek through quickly while keeping the map, standings, and race events aligned.
@@ -10,7 +12,7 @@
 >
 > Go loads the recording once when it starts. It can read a local file or retrieve an object through the S3 SDK. The browser first gets the circuit, drivers, and basic race metadata over HTTP. For personal analysis, it requests the 20-second block of positions that contains the selected moment. For shared playback, Go sends the current frame over a WebSocket and advances it using the server’s clock. Both modes hand the same kind of frame to the browser’s renderer.
 >
-> The browser draws the cars on Canvas, then uses that frame’s timestamp to update the leaderboard, driver comparison, and race-control banner. We fetch the detailed timing history after the first map frame so the viewer can see the replay sooner. The system synchronizes viewers on one Go process. Sharing the playback clock across replicas is the next milestone.
+> The browser draws the cars on Canvas, then uses that frame’s timestamp to update the leaderboard, driver comparison, and race-control banner. We fetch the detailed timing history after the first map frame so the viewer can see the replay sooner. Milestone 3 added a Redis clock so multiple Go replicas can agree on the current frame. Each replica still streams to its own viewers.
 
 ```mermaid
 flowchart LR
@@ -20,6 +22,7 @@ flowchart LR
     G -->|"HTTP · metadata and timing"| B["Browser"]
     G -->|"HTTP · position segments in local analysis"| B
     G -->|"WebSocket · positions in shared playback"| B
+    R["Redis · shared epoch and notifications"] <--> G
     B --> M["Canvas map and race state"]
     B --> T["Leaderboard, events and comparison"]
 ```
@@ -58,9 +61,9 @@ Each answer below takes about three minutes at a conversational pace.
 >
 > In shared playback, both friends can open the replay and follow the clock on the same Go server. If one arrives later, their browser gets the frame the server is showing at that moment. If their connection drops briefly, the replay can reconnect and pick up at the server’s current position in the race. This is why I kept personal analysis as a separate mode. When I’m studying a particular pit stop, I want control over pause, speed, and seeking. When I’m watching with someone else, I want “right now” to refer to the same part of the race for both of us.
 >
-> The implementation gives each WebSocket connection its own send loop, but the loops use the same server start time to figure out which frame to send. Each message contains a complete snapshot of the available car positions. A new viewer can draw the first frame they receive. If a connection falls behind, the next send picks the current frame instead of queuing all the ones the viewer missed. That favors staying close to the conversation, with the trade-off that we send repeated coordinates and a slow viewer may skip some frames.
+> The implementation gives each WebSocket connection its own send loop, but the loops use the same server start time to figure out which frame to send. Each message contains a complete snapshot of the available car positions. A new viewer can draw the first frame they receive. The viewer also retries after three seconds without a frame, which covers sockets that stay open but stop delivering data. If a connection falls behind, the next send picks the current frame instead of queuing all the ones the viewer missed. That favors staying close to the conversation, with the trade-off that we send repeated coordinates and a slow viewer may skip some frames.
 >
-> The scope I can demonstrate today is two viewers on the same server. I’d open one shared tab, let it run, then open a second and show that it joins in progress. The limitation becomes clear if I start two Go servers at different times. They can have identical race files and still disagree about the live replay position because each owns its own clock. That’s the next system-design problem. The data is already shareable, and the servers need to agree on which moment they’re showing. [Shared send loop](stream.go) · [Late-join tests](stream_test.go) · [Reconnect test](tests/browser/replay.spec.mjs)
+> The simplest demo uses two viewers on the same server. I’d open one shared tab, let it run, then open a second and show that it joins in progress. The limitation becomes clear if I start two Go servers at different times. They can have identical race files and still disagree about the live replay position because each owns its own clock. Milestone 3 solves that by letting both servers use the same Redis epoch. I can also show two independently started servers joining the same timeline. [Shared send loop](stream.go) · [Late-join tests](stream_test.go) · [Reconnect test](tests/browser/replay.spec.mjs)
 
 ### “What was your contribution? How did you use Codex?”
 
@@ -132,7 +135,7 @@ Each answer below takes about three minutes at a conversational pace.
 
 ### “Where does S3 fit? Why keep the recording in memory?”
 
-> S3 is optional storage for the prepared artifact. Go reads the entire object through the SDK once at startup, just as it can read a prepared file from disk. It then serves frames from memory and avoids a disk or object-store request for each seek. We exercised the SDK path using Moto, a local S3 emulator. The full-grid preview uses a local file. This is simple for one race per process. With a larger catalog, I’d consider storing independently retrievable segments and loading just the race data the viewer needs. [Startup and routes](main.go) · [S3 loader](s3.go)
+> S3 is optional storage for the prepared artifact. Go reads the entire object through the SDK once at startup, just as it can read a prepared file from disk. It then serves frames from memory and avoids a disk or object-store request for each seek. We exercised the SDK path using Moto, a local S3 emulator. In a separate end-to-end check, both Go processes loaded the full-grid recording from Moto and used real Redis. The Kubernetes preview packages the recording into its local test image. This is simple for one race per process. With a larger catalog, I’d consider storing independently retrievable segments and loading just the race data the viewer needs. [Startup and routes](main.go) · [S3 loader](s3.go)
 
 ## “How did you test it?”
 
@@ -142,15 +145,23 @@ Each answer below takes about three minutes at a conversational pace.
 
 ### “How would you run this across two servers?”
 
-> Two servers can load the same recording and show different moments. The recording tells you which frames exist. Each Go process currently has its own start time, which tells it which frame to show. I’d give each shared replay a record containing the race ID, recording version, and playback start time. Both replicas would use that reference to compute the current frame locally. For the current watch-only mode, I’d share that small piece of state rather than asking a central service for every frame. I’d start the two replicas at different times, connect a viewer to each one, and measure how far apart their playheads are.
+> Two servers can load the same recording and show different moments. The recording tells you which frames exist. In local-clock mode each process uses its own start time. Redis mode stores one shared start time keyed by a hash of the recording. Both replicas map the shared reference onto their own monotonic clock and compute frames locally. Pub/Sub announces a clock reset, and a periodic read repairs missed notifications. The integration test connects viewers to two servers, checks their frame indices, and verifies that both existing sockets adopt an operator reset. [Redis architecture](docs/REDIS_CLOCK.md)
 
 ### “What if the shared state store fails or users can pause the race?”
 
-> With watch-only playback and an immutable start time, a replica that already has the reference can continue using it. A newly started replica needs the reference before it can promise a synchronized replay. I’d also check clock skew across replicas because a shared start time still depends on their current clocks. If shared pause or seek is added, I’d store a versioned playback state with the playhead anchor and whether the race is playing. I’d define who can issue changes and how replicas apply them in order. These are design choices for a future implementation.
+> With watch-only playback and an immutable start time, a replica that already has the reference can continue using it. A newly started replica needs the reference before it can promise a synchronized replay. I’d also check clock skew across replicas because a shared start time still depends on their current clocks. If shared pause or seek is added, I’d store a versioned playback state with the playhead anchor and whether the race is playing. I’d define who can issue changes and how replicas apply them in order. Shared pause and seek are potential extensions.
 
 ### “How would you handle 200 shared viewers?”
 
 > At five frames per second, 200 viewers means roughly 1,000 outbound frame messages per second at full cadence. That’s a workload estimate. I’d measure the average bytes per message and multiply to estimate bandwidth. Then I’d load-test CPU, memory, and reconnect behavior and check how far real viewers drift. I’d scale the WebSocket servers around that evidence. For local analysis, immutable segments could be served through a cache or CDN with URLs keyed by recording version. That would keep repeated segment requests away from the replay process.
+
+### “How do Kubernetes, Prometheus, KEDA, and k6 each fit in?”
+
+> Kubernetes runs the Go replicas and sends new connections to available pods through a Service. The Go handler keeps a gauge of open WebSockets. Prometheus scrapes it per pod and KEDA exposes the total to the Kubernetes autoscaler, with a per-replica target. k6 acts as the audience. In our local run it held 220 WebSockets open, KEDA scaled from two pods to four, and all 129 viewers on the deleted pod resumed on a correctly aligned frame. The longest gap between valid frames was 1.208 seconds. Redis is what gives a surviving pod the reference it needs to serve that same race moment. [Deployment architecture](docs/DEPLOYMENT.md)
+
+### “Tell me about a test that changed your design.”
+
+> The first pod-failure test scaled to four pods and reached 220 viewers, but only 84 of 114 interrupted viewers got a valid frame within ten seconds. Some reconnect attempts took about a minute. That showed me that retrying on a close event was only part of the recovery path. The fix was a three-second watchdog for missing frames and a bounded retry cadence. The load test also checks frame alignment and requires every k6 session to finish. In the final local run, all 129 affected viewers recovered, with a maximum gap of about 1.21 seconds. [Load-test evidence](docs/DEPLOYMENT.md#verified-local-run)
 
 ## Code to have open
 

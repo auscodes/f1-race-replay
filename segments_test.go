@@ -12,7 +12,7 @@ func TestRecordingSegments(t *testing.T) {
 	clip := recording{Session: session{SegmentSize: 2}, Frames: [][]position{
 		{{Driver: "44", point: point{X: 1}}}, {}, {{Driver: "63", point: point{X: 2}}},
 	}}
-	handler := replayRoutes(clip, time.Now())
+	handler := replayRoutes(clip, newPlaybackClock(time.Now()))
 	for _, tc := range []struct {
 		index string
 		code  int
