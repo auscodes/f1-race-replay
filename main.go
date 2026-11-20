@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -47,6 +48,26 @@ func replayRoutes(clip recording, startedAt time.Time) *http.ServeMux {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(clip.Session); err != nil {
 			log.Printf("send session metadata: %v", err)
+		}
+	})
+	mux.HandleFunc("GET /api/segments/{index}", func(w http.ResponseWriter, r *http.Request) {
+		index, err := strconv.ParseInt(r.PathValue("index"), 10, 64)
+		if err != nil || index < 0 {
+			http.Error(w, "invalid segment index", http.StatusBadRequest)
+			return
+		}
+		size, count := clip.Session.SegmentSize, int64(len(clip.Frames))
+		if size < 1 || count == 0 || index > (count-1)/size {
+			http.NotFound(w, r)
+			return
+		}
+		start := index * size
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(struct {
+			StartFrame int64        `json:"startFrame"`
+			Frames     [][]position `json:"frames"`
+		}{StartFrame: start, Frames: clip.Frames[start:min(start+size, count)]}); err != nil {
+			log.Printf("send replay segment: %v", err)
 		}
 	})
 	stream := frameStream{clip: clip, startedAt: startedAt}
