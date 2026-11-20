@@ -1,25 +1,25 @@
-# Milestone 3 · Redis shared playback clock
+# Redis shared playback clock
 
-New to Redis or WebSockets? Start with [how a race frame gets to the browser](STACK_GUIDE.md#bullet-1--how-a-race-frame-gets-to-the-browser).
+New to Redis or WebSockets? Start with [how a race frame gets to the browser](stack.md#how-a-race-frame-gets-to-the-browser).
 
-## What to say in an interview
+## Clock ownership
 
-> Two Go processes can load byte-identical recordings and still show different frames if they started at different times. I use Redis to agree on the start time. The key is scoped to a recording hash, so replicas only share a clock when they agree on what to play. Each server reads the Redis start time and the current Redis time together, then maps that elapsed time onto its own monotonic clock. That gives it a cheap local calculation for every frame.
->
-> The Redis key holds the authoritative epoch. Pub/Sub tells running replicas when it changes, such as after an operator resets the replay. On a notification, a replica reads the key again. Since Pub/Sub delivers messages only to connected subscribers, the server also rechecks the key periodically to repair a missed update. Redis carries clock changes. Go still streams the actual telemetry frames over WebSockets.
+Two Go processes can load the same recording and still show different frames if they start at different times. Redis gives replicas a common start time. The key is scoped to a recording hash, so replicas only share a clock when they agree on what to play. Each server reads the Redis start time and the current Redis time together, then maps that elapsed time onto its own monotonic clock. That gives it a cheap local calculation for every frame.
+
+The Redis key holds the authoritative epoch. Pub/Sub tells running replicas when it changes, such as after an operator resets the replay. On a notification, a replica reads the key again. Since Pub/Sub delivers messages only to connected subscribers, the server also rechecks the key periodically to repair a missed update. Redis carries clock changes. Go still streams the actual telemetry frames over WebSockets.
 
 ## Data and control flow
 
 ```mermaid
 flowchart LR
-    File["Same prepared recording bytes"] --> A["Go replica A"]
-    File --> B["Go replica B"]
+    File["Same prepared recording bytes"] --A["Go replica A"]
+    File --B["Go replica B"]
     A <-->|"Read epoch + Redis time"| R["Redis key · authoritative start time"]
     B <-->|"Read epoch + Redis time"| R
     Reset["Operator reset command"] -->|"Update key and publish atomically"| R
-    R --> P["Pub/Sub · clock changed"]
-    P --> A
-    P --> B
+    R --P["Pub/Sub · clock changed"]
+    P --A
+    P --B
     A -->|"WebSocket frames"| X["Viewers of A"]
     B -->|"WebSocket frames"| Y["Viewers of B"]
 ```
@@ -32,7 +32,7 @@ flowchart LR
 | **Key plus Pub/Sub** | The key gives late joiners and new replicas a source of truth. Notifications let already-running replicas react promptly. A two-second reconciliation interval bounds how long a missed notification normally takes to catch up after Redis is available. |
 | **Keep the last clock during a Redis outage** | Running replicas can continue playing from the last known epoch. A configured replica that cannot read Redis at startup fails startup. If Redis loses the epoch key, the next successful read creates a new timeline. Redis persistence determines whether the epoch survives a Redis restart. |
 
-[Implementation](../replay_clock.go) · [WebSocket loop](../stream.go) · [Redis delivery semantics](https://redis.io/docs/latest/develop/pubsub/#delivery-semantics)
+[Implementation](../../replay_clock.go) · [WebSocket loop](../../stream.go) · [Redis delivery semantics](https://redis.io/docs/latest/develop/pubsub/#delivery-semantics)
 
 ## Verify locally
 
@@ -44,4 +44,4 @@ The Redis integration tests start two HTTP servers with distinct client connecti
 REPLAY_TEST_REDIS_URL=redis://127.0.0.1:6379/0 go test -race ./...
 ```
 
-[Run instructions](../README.md#shared-playback-across-servers) · [Redis integration tests](../replay_clock_test.go) · [All milestones](ROADMAP.md)
+[Run instructions](../CONFIGURATION.md#shared-playback-across-servers) · [Redis integration tests](../../replay_clock_test.go) · [All milestones](milestones.md)

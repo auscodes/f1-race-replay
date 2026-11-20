@@ -76,7 +76,9 @@ if [[ -z "$victim" ]]; then
   exit 1
 fi
 
-echo "Deleting serving pod $victim with $victim_connections active connections."
+fault_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+printf '%s\n' "$fault_time" >"$output/fault-time.txt"
+echo "[$fault_time] Deleting serving pod $victim with $victim_connections active connections."
 "${kube[@]}" delete pod "$victim" --grace-period=0 --force --wait=false
 
 result=0
