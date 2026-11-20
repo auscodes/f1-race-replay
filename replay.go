@@ -16,11 +16,20 @@ type position struct {
 	point
 }
 
+type recordingSource struct {
+	Provider     string `json:"provider"`
+	SessionKey   int    `json:"sessionKey"`
+	ClipStartUTC string `json:"clipStartUtc"`
+}
+
 type session struct {
-	Name       string   `json:"name"`
-	Drivers    []string `json:"drivers"`
-	Track      []point  `json:"track"`
-	DurationMS int64    `json:"durationMs"`
+	Name        string            `json:"name"`
+	Caption     string            `json:"caption,omitempty"`
+	Drivers     []string          `json:"drivers"`
+	DriverNames map[string]string `json:"driverNames,omitempty"`
+	Track       []point           `json:"track"`
+	DurationMS  int64             `json:"durationMs"`
+	Source      *recordingSource  `json:"source,omitempty"`
 }
 
 type recording struct {
@@ -45,6 +54,14 @@ func loadRecording(data []byte) (recording, error) {
 	}
 	if len(clip.Session.Track) < 3 || len(clip.Session.Drivers) == 0 {
 		return recording{}, fmt.Errorf("recording needs a track and at least one driver")
+	}
+	if clip.IntervalMS > (1<<63-1)/int64(time.Millisecond)/int64(len(clip.Frames)) {
+		return recording{}, fmt.Errorf("recording is too long for the playback clock")
+	}
+	for i, positions := range clip.Frames {
+		if positions == nil {
+			clip.Frames[i] = []position{}
+		}
 	}
 	clip.Session.DurationMS = int64(len(clip.Frames)) * clip.IntervalMS
 	return clip, nil

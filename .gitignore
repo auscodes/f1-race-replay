@@ -3,3 +3,5 @@
 /coverage.out
 /node_modules/
 /test-results/
+/.recordings/
+__pycache__/

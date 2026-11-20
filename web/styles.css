@@ -51,7 +51,7 @@ p, h1, h2, h3 { margin: 0; }
   letter-spacing: -.04em;
 }
 .session-title p { margin-block-start: 13px; color: var(--muted); font-size: .92rem; }
-.session-title span { margin-inline: .4em; color: var(--accent); }
+.caption-separator { margin-inline: .4em; color: var(--accent); }
 
 .replay-layout {
   display: grid;

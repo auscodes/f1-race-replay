@@ -104,6 +104,7 @@ async function start() {
   if (!response.ok) throw new Error(`Session request failed (${response.status})`);
   const session = await response.json();
   document.querySelector("#circuit-name").textContent = session.name;
+  document.querySelector("#recording-caption").textContent = session.caption || "Synthetic recording";
   document.querySelector("#duration").textContent = `/ ${raceTime(session.durationMs)}`;
   progress.max = session.durationMs;
 
@@ -117,7 +118,7 @@ async function start() {
     marker.className = "driver-marker";
     marker.style.backgroundColor = color;
     marker.setAttribute("aria-hidden", "true");
-    item.append(marker, `Car ${driver}`);
+    item.append(marker, session.driverNames?.[driver] || `Car ${driver}`);
     drivers.append(item);
   });
 

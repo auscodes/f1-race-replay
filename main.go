@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -15,6 +19,27 @@ var demo []byte
 
 //go:embed web
 var web embed.FS
+
+func readRecording(ctx context.Context, location string) (recording, error) {
+	if location == "" {
+		return loadRecording(demo)
+	}
+	var data []byte
+	var err error
+	if strings.HasPrefix(location, "s3://") {
+		data, err = readS3Object(ctx, location)
+	} else {
+		data, err = os.ReadFile(location)
+	}
+	if err != nil {
+		return recording{}, fmt.Errorf("read recording %q: %w", location, err)
+	}
+	clip, err := loadRecording(data)
+	if err != nil {
+		return recording{}, fmt.Errorf("recording %q: %w", location, err)
+	}
+	return clip, nil
+}
 
 func replayRoutes(clip recording, startedAt time.Time) *http.ServeMux {
 	mux := http.NewServeMux()
@@ -31,9 +56,12 @@ func replayRoutes(clip recording, startedAt time.Time) *http.ServeMux {
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "address to listen on")
+	recordingLocation := flag.String("recording", "", "local path or s3://bucket/key for a prepared JSON recording")
 	flag.Parse()
 
-	clip, err := loadRecording(demo)
+	loadCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	clip, err := readRecording(loadCtx, *recordingLocation)
+	cancel()
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -16,7 +16,7 @@
     <main>
       <header class="session-title">
         <h1 id="circuit-name">Race replay</h1>
-        <p>Synthetic recording <span aria-hidden="true">/</span> Shared playback</p>
+        <p><span id="recording-caption">Synthetic recording</span> <span class="caption-separator" aria-hidden="true">/</span> Shared playback</p>
       </header>
       <div class="replay-layout">
         <section class="map" aria-label="Circuit map">
@@ -33,7 +33,7 @@
           <progress id="progress" aria-label="Time through recording" value="0" max="1"></progress>
           <div class="frame-number"><span>Frame sequence</span><span id="sequence">—</span></div>
 
-          <h3>On track</h3>
+          <h3>Drivers</h3>
           <ul id="drivers" class="drivers"></ul>
 
           <details id="inspector">
