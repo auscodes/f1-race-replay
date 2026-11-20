@@ -37,7 +37,7 @@ test("inspecting a frame freezes the display while the live stream continues", a
 
   await inspector.click();
   await expect(payload).toBeHidden();
-  await expect.poll(async () => Number(await sequence.innerText())).toBeGreaterThan(refreshed.sequence);
+  await expect.poll(async () => Number(await sequence.textContent())).toBeGreaterThan(refreshed.sequence);
 });
 
 test("the viewer reconnects and displays a newer frame after a socket closes", async ({ page }) => {
@@ -51,12 +51,12 @@ test("the viewer reconnects and displays a newer frame after a socket closes", a
   const status = page.getByRole("status");
   const sequence = page.locator("#sequence");
   await expect(status).toHaveText("Receiving replay");
-  const beforeDisconnect = Number(await sequence.innerText());
+  const beforeDisconnect = Number(await sequence.textContent());
 
   await connections[0].close({ code: 1001 });
   await expect.poll(() => connections.length).toBeGreaterThan(1);
   await expect(status).toHaveText("Receiving replay");
-  await expect.poll(async () => Number(await sequence.innerText())).toBeGreaterThan(beforeDisconnect);
+  await expect.poll(async () => Number(await sequence.textContent())).toBeGreaterThan(beforeDisconnect);
 });
 
 test("the viewer shows a useful error when session metadata is unavailable", async ({ page }) => {

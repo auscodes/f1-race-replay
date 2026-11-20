@@ -1,4 +1,5 @@
 import { startAnalysis } from "./analysis.js";
+import { setupRaceContext } from "./race-context.js";
 import { setupRaceReview } from "./race-review.js";
 import { setupTimingTower, teamColor } from "./timing-tower.js";
 
@@ -154,6 +155,7 @@ async function start() {
   });
 
   const draw = drawMap(session.track, colors, grid);
+  const updateContext = session.timeline ? setupRaceContext(session) : undefined;
   let review = session.timeline && !grid ? setupRaceReview(session) : undefined;
   let latestFrame, capturedFrame, focused, jump;
   let requestedTiming = false;
@@ -168,7 +170,7 @@ async function start() {
       if (!response.ok) throw new Error(`Timing request failed (${response.status})`);
       session.timeline = await response.json();
       tower.setTiming(session.timeline);
-      review = setupRaceReview(session, session.drivers.slice(0, 2));
+      review = setupRaceReview(session);
       if (jump) review.setJump(jump);
       showFrame(capturedFrame ?? latestFrame);
     } catch {
@@ -183,6 +185,7 @@ async function start() {
     progress.value = frame.elapsedMs;
     draw(frame.positions, focused);
     tower?.update(frame.elapsedMs);
+    updateContext?.(frame.elapsedMs);
     review?.update(frame.elapsedMs);
     for (const [driver, details] of timing) {
       const data = session.timeline.drivers[driver];

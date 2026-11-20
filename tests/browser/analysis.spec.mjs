@@ -42,7 +42,7 @@ test("personal replay opens one segment and jumps with matching driver timing", 
   await expect(pit).toHaveAttribute("aria-current", "true");
   expect(requested).toEqual([0, 1]);
   await page.getByRole("button", {name: "Play", exact: true}).click();
-  await expect.poll(async () => Number(await page.locator("#sequence").innerText())).toBeGreaterThan(41);
+  await expect.poll(async () => Number(await page.locator("#sequence").textContent())).toBeGreaterThan(41);
   await page.getByRole("button", {name: "Pause", exact: true}).click();
   await expect(page.getByRole("button", {name: "Play", exact: true})).toBeVisible();
   await page.getByRole("slider", {name: "Replay time"}).press("End");

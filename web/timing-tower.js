@@ -1,3 +1,4 @@
+import { latestAt } from "./race-context.js";
 import { lapLabel } from "./race-review.js";
 
 const unknown = "—";
@@ -11,16 +12,6 @@ const compoundCodes = { SOFT: "S", MEDIUM: "M", HARD: "H", INTERMEDIATE: "I", WE
 
 export function teamColor(gridDriver) {
   return /^[\da-f]{6}$/i.test(gridDriver?.color ?? "") ? `#${gridDriver.color}` : "#c8bcb9";
-}
-
-function latestAt(records = [], elapsed) {
-  let low = 0, high = records.length;
-  while (low < high) {
-    const mid = Math.floor((low + high) / 2);
-    if (records[mid].elapsedMs <= elapsed) low = mid + 1;
-    else high = mid;
-  }
-  return records[low - 1];
 }
 
 function gapLabel(value) {

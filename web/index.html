@@ -19,7 +19,11 @@
         <p><span id="recording-caption">Synthetic recording</span> <span class="caption-separator" aria-hidden="true">/</span> <span id="playback-mode">Shared playback</span> <a id="mode-link" hidden></a></p>
       </header>
       <div class="replay-layout">
-        <section aria-label="Circuit map">
+        <section class="replay-track" aria-label="Circuit map">
+          <div id="race-state" class="race-state" hidden>
+            <span id="race-lap" class="race-lap" hidden></span>
+            <span id="race-control" class="race-control" aria-live="polite"></span>
+          </div>
           <div class="map">
             <canvas id="circuit" width="800" height="480" role="img" aria-label="Circuit map with car positions">
               Current car positions are also available in the frame inspector.
@@ -38,11 +42,6 @@
               <label>Race event <select id="event-jump"></select></label>
             </div>
           </section>
-          <section id="gap-panel" class="gap-panel" aria-labelledby="gap-heading" hidden>
-            <div class="panel-heading"><h2 id="gap-heading">Gap to leader</h2><span>Seconds</span></div>
-            <ul id="gap-legend" class="gap-legend" aria-label="Chart legend"></ul>
-            <canvas id="gap-chart" role="img" aria-label="Gap to leader across the race, with the current replay time marked"></canvas>
-          </section>
         </section>
         <section class="timing" aria-labelledby="playback-heading">
           <h2 id="playback-heading">Playback</h2>
@@ -51,7 +50,6 @@
             <span id="duration" class="duration"></span>
           </div>
           <progress id="progress" aria-label="Time through recording" value="0" max="1"></progress>
-          <div class="frame-number"><span>Frame sequence</span><span id="sequence">—</span></div>
 
           <section id="compact-drivers" aria-labelledby="driver-heading">
             <h3 id="driver-heading">Drivers</h3>
@@ -74,7 +72,19 @@
               </table>
             </div>
           </section>
+        </section>
 
+        <section id="comparison" class="comparison" aria-labelledby="gap-heading" hidden>
+          <div class="panel-heading"><h2 id="gap-heading">Gap to leader</h2><span id="gap-unit">Seconds</span></div>
+          <div id="comparison-pickers" class="comparison-pickers" hidden>
+            <label>Driver 1 <select id="comparison-first"></select></label>
+            <label>Driver 2 <select id="comparison-second"></select></label>
+          </div>
+          <div id="gap-panel" hidden>
+            <ul id="gap-legend" class="gap-legend" aria-label="Chart legend"></ul>
+            <canvas id="gap-chart" role="img" aria-label="Gap to leader across the race, with the current replay time marked"></canvas>
+          </div>
+          <p id="gap-empty" class="comparison-empty" hidden>Gap in seconds is unavailable for this pair.</p>
           <section id="lap-panel" class="review-section" aria-labelledby="lap-heading" hidden>
             <h3 id="lap-heading">Completed laps</h3>
             <table class="lap-table">
@@ -82,7 +92,9 @@
               <tbody id="lap-rows"></tbody>
             </table>
           </section>
+        </section>
 
+        <div class="race-tools">
           <section id="events-panel" class="review-section" aria-labelledby="events-heading" hidden>
             <h3 id="events-heading">Race events</h3>
             <ol id="race-events" class="race-events"></ol>
@@ -90,11 +102,12 @@
 
           <details id="inspector">
             <summary>Inspect a frame</summary>
+            <div class="frame-number"><span>Frame sequence</span><span id="sequence">—</span></div>
             <p class="inspector-note">Showing a snapshot. Close to resume playback.</p>
             <button id="capture" type="button" disabled>Capture latest frame</button>
             <pre id="payload">Waiting for a frame…</pre>
           </details>
-        </section>
+        </div>
       </div>
     </main>
   </body>
