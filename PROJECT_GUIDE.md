@@ -55,7 +55,17 @@ One server clock means late joiners receive the current frame as soon as they co
 
 At **11,800 ms** since startup, `frameAt` divides by 200 to get sequence **59**. With 60 saved frames, that picks index **59**, the last row. At **12,000 ms**, the sequence reaches **60**, the index wraps to **0**, and the browser shows **0:00.0**.
 
-In the running demo, open **Inspect a frame** and take its sequence modulo 60. Find that row in the `frames` array and compare car `01`'s coordinates with the snapshot. The tests cover timing boundaries, wraparound, and two late joiners getting the current frame. [Replay tests](replay_test.go) · [WebSocket tests](stream_test.go)
+In the running demo, open **Inspect a frame** and take its sequence modulo 60. Find that row in the `frames` array and compare car `01`'s coordinates with the snapshot.
+
+## How we verify changes
+
+| Test layer | What it checks |
+| --- | --- |
+| **Unit** | Replay timing at startup and loop boundaries, a one-frame recording, and rejection of malformed or incomplete recordings. [Replay tests](replay_test.go) |
+| **Integration** | The HTTP endpoint returns session metadata, the WebSocket route requires an upgrade, and real sockets receive advancing frames after joining in progress. [Route tests](routes_test.go) · [WebSocket tests](stream_test.go) |
+| **Browser** | Playwright starts the Go app and checks that the inspector can freeze and resume, playback continues after reconnect, and a failed metadata request shows an error. [Browser tests](tests/browser/replay.spec.mjs) |
+
+Both suites run on pull requests in GitHub Actions. For the historical importer, add tests for uneven timestamps, duplicate samples, and gaps when those inputs are introduced.
 
 ## Think like a system designer
 
