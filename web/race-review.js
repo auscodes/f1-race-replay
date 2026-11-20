@@ -5,17 +5,17 @@ function clockLabel(ms) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-function lapLabel(lap) {
+export function lapLabel(lap) {
   if (!lap) return "—";
   const fraction = String(lap.durationMs % 1000).padStart(3, "0");
   return `${clockLabel(lap.durationMs)}.${fraction}`;
 }
 
-function gapChart(session, names) {
+function gapChart(session, drivers, names) {
   const canvas = document.querySelector("#gap-chart");
   const legend = document.querySelector("#gap-legend");
   const ctx = canvas.getContext("2d");
-  const series = session.drivers.map((driver, index) => ({
+  const series = drivers.map((driver, index) => ({
     name: names[index],
     color: chartColors[index % chartColors.length],
     positions: session.timeline.drivers?.[driver]?.positions ?? [],
@@ -112,15 +112,15 @@ function gapChart(session, names) {
   return (elapsed) => { current = elapsed; draw(); };
 }
 
-export function setupRaceReview(session) {
+export function setupRaceReview(session, drivers = session.drivers) {
   const timeline = session.timeline;
-  const names = session.drivers.map((driver) => session.driverNames?.[driver] || `Car ${driver}`);
-  const updateChart = gapChart(session, names);
+  const names = drivers.map((driver) => session.driverNames?.[driver] || `Car ${driver}`);
+  const updateChart = gapChart(session, drivers, names);
   const lapRows = document.querySelector("#lap-rows");
   const rows = [];
   let jump;
 
-  session.drivers.forEach((driver, index) => {
+  drivers.forEach((driver, index) => {
     const laps = timeline.drivers?.[driver]?.completedLaps ?? [];
     if (laps.length === 0) return;
     const row = lapRows.insertRow();

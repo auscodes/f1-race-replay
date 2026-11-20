@@ -53,8 +53,27 @@
           <progress id="progress" aria-label="Time through recording" value="0" max="1"></progress>
           <div class="frame-number"><span>Frame sequence</span><span id="sequence">—</span></div>
 
-          <h3>Drivers</h3>
-          <ul id="drivers" class="drivers"></ul>
+          <section id="compact-drivers" aria-labelledby="driver-heading">
+            <h3 id="driver-heading">Drivers</h3>
+            <ul id="drivers" class="drivers"></ul>
+          </section>
+
+          <section id="timing-tower" class="review-section timing-tower" aria-labelledby="tower-heading" hidden>
+            <div class="tower-heading">
+              <h3 id="tower-heading">Leaderboard</h3>
+              <select id="gap-mode" aria-label="Time difference">
+                <option value="leader">Gap to leader</option>
+                <option value="interval">Interval ahead</option>
+              </select>
+            </div>
+            <p id="tower-message" role="status">Loading timing…</p>
+            <div class="tower-scroll" role="region" aria-label="Race standings" tabindex="0">
+              <table class="tower-table" aria-labelledby="tower-heading">
+                <thead><tr><th scope="col"><abbr title="Position">Pos</abbr></th><th scope="col">Driver</th><th id="tower-gap" scope="col">Gap</th><th scope="col">Tyre</th><th scope="col">Last lap</th><th scope="col">Status</th></tr></thead>
+                <tbody id="tower-rows"></tbody>
+              </table>
+            </div>
+          </section>
 
           <section id="lap-panel" class="review-section" aria-labelledby="lap-heading" hidden>
             <h3 id="lap-heading">Completed laps</h3>

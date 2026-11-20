@@ -20,21 +20,23 @@ go run . -addr 127.0.0.1:8090
 
 ## Historical replay
 
-The Barcelona clip follows Lewis Hamilton and George Russell around Hamilton's final stop under the Virtual Safety Car at the 2026 Barcelona-Catalunya Grand Prix. Generate it with Python 3.9 or newer and access to the [OpenF1 archive](https://openf1.org/docs/#location).
+Replay the 2026 Barcelona-Catalunya Grand Prix from lights out through the last classified finisher. The leaderboard follows all 22 drivers with running position, gap to the leader or interval to the car ahead, tyre compound and age, and last completed lap. Select a driver's code to highlight their car on the map. A checkered flag appears when each classified finisher crosses the line.
+
+Generate the recording with Python 3.9 or newer and access to the [OpenF1 archive](https://openf1.org/docs/). The importer caches downloaded data in `.recordings/openf1-grid` so interrupted imports can resume.
+
+```sh
+python3 tools/import_barcelona_grid.py
+go run . -recording .recordings/barcelona-2026-grid.json
+```
+
+Full-race recordings open in local analysis mode. Use the race timeline to jump to laps, pit stops, Virtual Safety Car messages, or the checkered flag. The gap chart compares Hamilton and Russell. Choose **Join shared playback** to follow the server's clock over WebSocket.
+
+The two-driver importer remains available for the 50-second Virtual Safety Car clip and the full Hamilton–Russell comparison.
 
 ```sh
 python3 tools/import_barcelona.py
-go run . -recording .recordings/barcelona-2026.json
-```
-
-Import the full Hamilton–Russell race to use the timeline, lap and race-event jumps, and driver timing.
-
-```sh
 python3 tools/import_barcelona.py --full
-go run . -recording .recordings/barcelona-2026-full.json
 ```
-
-Full-race recordings open in local analysis mode. Review the gap-to-leader chart, compare completed lap times, or jump from the event list to a pit stop or Virtual Safety Car message. The pit-stop list shows stationary time and total pit-lane time when available. Use **Join shared playback** to follow the server's clock over WebSocket.
 
 For a recording already stored in S3, pass its object URI. Configure the bucket's region and AWS credentials with permission to read that object. [AWS SDK configuration](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configure-gosdk.html)
 
@@ -48,7 +50,8 @@ go run . -recording s3://your-bucket/clips/barcelona-2026.json
 | --- | --- |
 | `GET /` | Browser viewer |
 | `GET /api/session` | Circuit geometry, driver IDs, and clip duration in JSON |
-| `GET /api/segments/{index}` | About one minute of positions for local playback and seeking |
+| `GET /api/segments/{index}` | Position frames for local playback and seeking. Full-grid segments cover 20 seconds. |
+| `GET /api/timing` | Full-grid timing, tyre stints, and race outcomes, loaded after the first map frame |
 | `GET /ws` | WebSocket stream of timestamped position snapshots |
 
 ## Development

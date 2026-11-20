@@ -73,7 +73,8 @@ def resample(samples, ticks):
             yield None
 
 
-def build_recording(track, observations, start_utc=CLIP_START, length_ms=CLIP_LENGTH_MS):
+def build_recording(track, observations, start_utc=CLIP_START, length_ms=CLIP_LENGTH_MS,
+                    driver_names=DRIVERS, require_positions=True):
     if len(track) < 3:
         raise ValueError("the reference lap needs at least three position samples")
     left, right = min(point.x for point in track), max(point.x for point in track)
@@ -93,9 +94,9 @@ def build_recording(track, observations, start_utc=CLIP_START, length_ms=CLIP_LE
     start = timestamp_ms(start_utc)
     ticks = range(start, start + length_ms, INTERVAL_MS)
     frames = [[] for _ in ticks]
-    for driver in DRIVERS:
+    for driver in driver_names:
         positions = list(resample(observations[driver], ticks))
-        if all(point is None for point in positions):
+        if require_positions and all(point is None for point in positions):
             raise ValueError(f"driver {driver} has no usable positions in the clip")
         for frame, point in zip(frames, positions):
             if point is not None:
@@ -105,8 +106,8 @@ def build_recording(track, observations, start_utc=CLIP_START, length_ms=CLIP_LE
         "session": {
             "name": "2026 Barcelona-Catalunya Grand Prix",
             "caption": "Hamilton vs Russell · Hamilton's final stop under the Virtual Safety Car",
-            "drivers": list(DRIVERS),
-            "driverNames": DRIVERS,
+            "drivers": list(driver_names),
+            "driverNames": driver_names,
             "track": [map_point(sample.x, sample.y) for sample in track],
             "source": {"provider": "OpenF1", "sessionKey": SESSION_KEY, "clipStartUtc": start_utc},
         },
@@ -158,18 +159,18 @@ def completed_laps(laps, start, length):
     return sorted(results, key=lambda lap: lap["elapsedMs"])
 
 
-def race_timeline(control, laps, start, length):
+def race_timeline(control, laps, start, length, driver_names=DRIVERS, rows=fetch_rows):
     events = []
     drivers = {}
-    for driver, name in DRIVERS.items():
+    for driver, name in driver_names.items():
         filters = f"&driver_number={driver}"
         drivers[driver] = {
             "laps": timing_series(laps[driver], "date_start", "lap_number", start, length),
             "completedLaps": completed_laps(laps[driver], start, length),
-            "positions": timing_series(fetch_rows("position", filters), "date", "position", start, length, seed=True),
-            "gaps": timing_series(fetch_rows("intervals", filters), "date", "gap_to_leader", start, length),
+            "positions": timing_series(rows("position", filters), "date", "position", start, length, seed=True),
+            "gaps": timing_series(rows("intervals", filters), "date", "gap_to_leader", start, length),
         }
-        stops = sorted(fetch_rows("pit", filters), key=lambda stop: timestamp_ms(stop["date"]))
+        stops = sorted(rows("pit", filters), key=lambda stop: timestamp_ms(stop["date"]))
         for index, stop in enumerate(stops, 1):
             elapsed = timestamp_ms(stop["date"]) - start
             if 0 <= elapsed < length:
@@ -236,7 +237,7 @@ def main():
         parser.exit(1, f"Import failed: {error}\n")
     print(f"Wrote {len(recording['frames'])} frames to {output}")
     if args.full:
-        for driver, name in DRIVERS.items():
+        for driver, name in driver_names.items():
             missing = sum(all(car["driver"] != driver for car in frame) for frame in recording["frames"])
             print(f"{name}: position unavailable in {missing} frames")
 
