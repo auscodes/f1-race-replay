@@ -87,6 +87,40 @@ def race_states(control, start, length):
     return sorted(transitions, key=lambda transition: transition["elapsedMs"])
 
 
+def race_laps(laps, start, length, total):
+    first_crossing = {}
+    for driver_laps in laps.values():
+        for lap in driver_laps:
+            if not lap.get("date_start") or not 1 <= lap["lap_number"] <= total:
+                continue
+            elapsed = timestamp_ms(lap["date_start"]) - start
+            if 0 <= elapsed < length:
+                number = lap["lap_number"]
+                first_crossing[number] = min(elapsed, first_crossing.get(number, elapsed))
+    return [{"elapsedMs": elapsed, "value": str(number)}
+            for number, elapsed in sorted(first_crossing.items())]
+
+
+def sector_breaks(track, reference_lap):
+    # OpenF1's lap start and locations are approximate. Snap each timing split
+    # to the nearest available sample on the same reference lap.
+    elapsed = 0
+    splits = []
+    for field in ("duration_sector_1", "duration_sector_2"):
+        seconds = reference_lap.get(field)
+        if not seconds or seconds < 0:
+            return []
+        elapsed += seconds
+        timestamp = timestamp_ms(reference_lap["date_start"]) + round(elapsed * 1000)
+        index = min(range(len(track)), key=lambda i: abs(track[i].time_ms - timestamp))
+        if index <= (splits[-1] if splits else 0) or index >= len(track) - 1:
+            return []
+        if abs(track[index].time_ms - timestamp) > MAX_GAP_MS:
+            return []
+        splits.append(index)
+    return splits
+
+
 def import_grid(cache):
     control = archive_rows(cache, "race_control")
     start_utc = next(row["date"] for row in control if row["message"] == "SESSION STARTED")
@@ -119,6 +153,7 @@ def import_grid(cache):
     timeline = race_timeline(control, laps, start, length, driver_names, cached_driver_rows)
     timeline["raceStates"] = race_states(control, start, length)
     timeline["totalLaps"] = max(result["number_of_laps"] for result in results)
+    timeline["raceLaps"] = race_laps(laps, start, length, timeline["totalLaps"])
     timeline["events"].append({"elapsedMs": flag, "kind": "flag", "label": "Chequered flag"})
     timeline["events"].sort(key=lambda event: event["elapsedMs"])
     for driver, timing in timeline["drivers"].items():
@@ -128,7 +163,10 @@ def import_grid(cache):
                            for row in datasets["stints"][driver]]
         timing["outcome"] = outcomes.get(driver)
 
+    reference = next((lap for lap in laps["63"]
+                      if lap.get("date_start") and timestamp_ms(lap["date_start"]) == track_start), {})
     recording["session"].update({
+        "sectorBreaks": sector_breaks(track, reference),
         "caption": f"Full race · {len(driver_names)} drivers",
         "grid": {str(row["driver_number"]): {"code": row["name_acronym"], "team": row["team_name"],
                                              "color": row["team_colour"]} for row in driver_rows},

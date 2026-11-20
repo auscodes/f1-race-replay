@@ -1,7 +1,7 @@
 import unittest
 
-from import_barcelona import EPOCH, MILLISECOND
-from import_barcelona_grid import classification, race_states
+from import_barcelona import EPOCH, MILLISECOND, Sample
+from import_barcelona_grid import classification, race_laps, race_states, sector_breaks
 
 
 class ClassificationTest(unittest.TestCase):
@@ -46,4 +46,23 @@ class RaceStatesTest(unittest.TestCase):
             {"elapsedMs": 700, "value": "vsc-ending"},
             {"elapsedMs": 800, "value": "green"},
             {"elapsedMs": 1000, "value": "chequered"},
+        ])
+
+
+class MapMetadataTest(unittest.TestCase):
+    def test_sector_splits_snap_to_reference_lap_samples(self):
+        track = [Sample(i * 1000, i, i) for i in range(8)]
+        reference_lap = {"date_start": EPOCH.isoformat(),
+                         "duration_sector_1": 2.2, "duration_sector_2": 3.1}
+        self.assertEqual(sector_breaks(track, reference_lap), [2, 5])
+        self.assertEqual(sector_breaks(track[:5] + track[7:], reference_lap), [])
+
+    def test_race_lap_starts_use_the_first_crossing_across_drivers(self):
+        def lap(number, time):
+            return {"lap_number": number, "date_start": (EPOCH + time * MILLISECOND).isoformat()}
+
+        drivers = {"44": [lap(1, 0), lap(2, 1300), lap(3, 2500)],
+                   "63": [lap(1, 0), lap(2, 1100)]}
+        self.assertEqual(race_laps(drivers, 0, 3000, 2), [
+            {"elapsedMs": 0, "value": "1"}, {"elapsedMs": 1100, "value": "2"},
         ])

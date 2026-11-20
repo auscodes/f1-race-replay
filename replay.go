@@ -74,22 +74,24 @@ type raceEvent struct {
 type raceTimeline struct {
 	Events     []raceEvent             `json:"events"`
 	Drivers    map[string]driverTiming `json:"drivers"`
+	RaceLaps   []timedValue            `json:"raceLaps,omitempty"`
 	RaceStates []timedValue            `json:"raceStates,omitempty"`
 	TotalLaps  int                     `json:"totalLaps,omitempty"`
 }
 
 type session struct {
-	Name        string                `json:"name"`
-	Caption     string                `json:"caption,omitempty"`
-	Drivers     []string              `json:"drivers"`
-	DriverNames map[string]string     `json:"driverNames,omitempty"`
-	Track       []point               `json:"track"`
-	DurationMS  int64                 `json:"durationMs"`
-	Source      *recordingSource      `json:"source,omitempty"`
-	IntervalMS  int64                 `json:"intervalMs"`
-	SegmentSize int64                 `json:"segmentSize"`
-	Timeline    *raceTimeline         `json:"timeline,omitempty"`
-	Grid        map[string]gridDriver `json:"grid,omitempty"`
+	Name         string                `json:"name"`
+	Caption      string                `json:"caption,omitempty"`
+	Drivers      []string              `json:"drivers"`
+	DriverNames  map[string]string     `json:"driverNames,omitempty"`
+	SectorBreaks []int                 `json:"sectorBreaks,omitempty"`
+	Track        []point               `json:"track"`
+	DurationMS   int64                 `json:"durationMs"`
+	Source       *recordingSource      `json:"source,omitempty"`
+	IntervalMS   int64                 `json:"intervalMs"`
+	SegmentSize  int64                 `json:"segmentSize"`
+	Timeline     *raceTimeline         `json:"timeline,omitempty"`
+	Grid         map[string]gridDriver `json:"grid,omitempty"`
 }
 
 type recording struct {
