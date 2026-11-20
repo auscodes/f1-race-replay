@@ -1,0 +1,172 @@
+{
+  "uid": "f1-replay-overview",
+  "title": "F1 Race Replay",
+  "description": "Connection load and replay pod response during scaling and failure tests.",
+  "tags": [
+    "f1-replay"
+  ],
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "timezone": "utc",
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Total open WebSockets",
+      "description": "The Prometheus query KEDA uses to calculate the desired number of replay replicas.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "replay-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 14,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "fillOpacity": 14,
+            "spanNulls": false,
+            "lineInterpolation": "stepAfter"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "replay-prometheus"
+          },
+          "expr": "sum(f1_replay_websocket_connections{job=\"replay\"})",
+          "legendFormat": "Open sockets",
+          "range": true,
+          "interval": "2s"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Replay pods responding to Prometheus",
+      "description": "A pod counts here when its scrape succeeds. Kubernetes Deployment availability is checked separately by the load driver.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "replay-prometheus"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 0,
+        "w": 10,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "fillOpacity": 14,
+            "spanNulls": false,
+            "lineInterpolation": "stepAfter"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "replay-prometheus"
+          },
+          "expr": "sum(up{job=\"replay\"} == bool 1)",
+          "legendFormat": "Responding pods",
+          "range": true,
+          "interval": "2s"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Open WebSockets by replay pod",
+      "description": "Existing sockets stay on the pod that accepted them. During recovery, look for the deleted pod\u2019s series ending and connections appearing on surviving pods.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "replay-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "fillOpacity": 14,
+            "spanNulls": false,
+            "lineInterpolation": "stepAfter"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "replay-prometheus"
+          },
+          "expr": "f1_replay_websocket_connections{job=\"replay\"}",
+          "legendFormat": "{{pod}}",
+          "range": true,
+          "interval": "2s"
+        }
+      ]
+    }
+  ]
+}
