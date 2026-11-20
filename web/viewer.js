@@ -24,8 +24,13 @@ function connect(onFrame) {
   const url = new URL("/ws", window.location.href);
   url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const socket = new WebSocket(url);
+  let retryScheduled = false;
+  let watchdog = setTimeout(retry, 3000);
 
   socket.addEventListener("message", (event) => {
+    if (retryScheduled) return;
+    clearTimeout(watchdog);
+    watchdog = setTimeout(retry, 3000);
     if (connection.dataset.state !== "connected") {
       connection.dataset.state = "connected";
       connection.textContent = "Receiving replay";
@@ -33,12 +38,17 @@ function connect(onFrame) {
     }
     onFrame(JSON.parse(event.data));
   });
-  socket.addEventListener("close", () => {
+  function retry() {
+    if (retryScheduled) return;
+    retryScheduled = true;
+    clearTimeout(watchdog);
+    socket.close();
     connection.dataset.state = "reconnecting";
     connection.textContent = "Connection lost. Retrying…";
     capture.disabled = true;
     setTimeout(() => connect(onFrame), 1000);
-  });
+  }
+  socket.addEventListener("close", retry);
 }
 
 async function start() {

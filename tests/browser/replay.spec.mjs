@@ -64,3 +64,30 @@ test("the viewer shows a useful error when session metadata is unavailable", asy
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveText("Could not load the recording. Refresh to retry.");
 });
+
+test("the viewer reconnects if an open socket stops delivering frames", async ({ page }) => {
+  let connections = 0;
+  await page.routeWebSocket("**/ws", (socket) => {
+    if (++connections !== 1) {
+      socket.connectToServer();
+      return;
+    }
+    const server = socket.connectToServer();
+    let forwarded = false;
+    server.onMessage((message) => {
+      if (forwarded) return;
+      forwarded = true;
+      socket.send(message);
+    });
+  });
+
+  await page.goto("/");
+  const status = page.getByRole("status");
+  const sequence = page.locator("#sequence");
+  await expect(status).toHaveText("Receiving replay");
+  const before = Number(await sequence.textContent());
+
+  await expect.poll(() => connections, {timeout: 8000}).toBe(2);
+  await expect(status).toHaveText("Receiving replay");
+  await expect.poll(async () => Number(await sequence.textContent())).toBeGreaterThan(before);
+});

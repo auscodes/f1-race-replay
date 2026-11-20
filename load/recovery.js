@@ -49,13 +49,32 @@ export default async function ({intervalMs, frames}) {
   function attempt() {
     return new Promise((resolve) => {
       const socket = new WebSocket(endpoint);
-      let requestedClose = false;
-      const timer = setTimeout(() => {
-        requestedClose = true;
-        socket.close();
-      }, Math.max(1, finishAt - Date.now()));
+      let completed = false;
+      let watchdog = setTimeout(() => stop(false), 3000);
+      const timer = setTimeout(() => stop(true), Math.max(1, finishAt - Date.now()));
+
+      function stop(scheduled) {
+        if (completed) return;
+        completed = true;
+        clearTimeout(timer);
+        clearTimeout(watchdog);
+        if (!scheduled && lastFrame && interruptedAt === undefined) {
+          // Measure the visible gap between valid frames, including close
+          // detection and reconnect time.
+          interruptedAt = lastFrame.at;
+          interrupted.add(1);
+        }
+        if (socket.readyState === WebSocket.OPEN) socket.close();
+        // k6 v2.1 cannot cancel a pending handshake via close(). Retry
+        // independently and close that socket only if it later opens.
+        if (socket.readyState === WebSocket.CONNECTING) {
+          socket.addEventListener("open", () => socket.close());
+        }
+        resolve();
+      }
 
       socket.addEventListener("message", ({data}) => {
+        if (completed) return;
         const now = Date.now();
         let frame;
         try {
@@ -69,6 +88,8 @@ export default async function ({intervalMs, frames}) {
           elapsedMs === (sequence % frames) * intervalMs && Array.isArray(positions);
         valid.add(correct);
         if (!correct) return;
+        clearTimeout(watchdog);
+        watchdog = setTimeout(() => stop(false), 3000);
 
         if (interruptedAt !== undefined) {
           const expected = lastFrame.sequence + (now - lastFrame.at) / intervalMs;
@@ -85,22 +106,13 @@ export default async function ({intervalMs, frames}) {
         lastFrame = {sequence, at: now};
       });
 
-      socket.addEventListener("close", () => {
-        clearTimeout(timer);
-        if (!requestedClose && lastFrame && interruptedAt === undefined) {
-          // Measure the visible gap between valid frames, including close
-          // detection and reconnect time.
-          interruptedAt = lastFrame.at;
-          interrupted.add(1);
-        }
-        resolve();
-      });
+      socket.addEventListener("close", () => stop(false));
     });
   }
 
   while (Date.now() < finishAt) {
     await attempt();
-    if (Date.now() < finishAt) await new Promise((resolve) => setTimeout(resolve, 250));
+    if (Date.now() < finishAt) await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   if (interruptedAt !== undefined) recovered.add(false);
 }

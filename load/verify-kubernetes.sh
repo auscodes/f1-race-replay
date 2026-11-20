@@ -52,15 +52,16 @@ for ((attempt=0; attempt<55; attempt++)); do
   fi
   if [[ $(replicas) == 4 ]]; then
     if metrics=$(query 'f1_replay_websocket_connections{job="replay"}'); then
-      read -r connections busiest < <(printf '%s' "$metrics" | python3 -c '
+      read -r connections busiest victim_connections < <(printf '%s' "$metrics" | python3 -c '
 import json, sys
 pods = json.load(sys.stdin)["data"]["result"]
 counts = {pod["metric"]["pod"]: int(float(pod["value"][1])) for pod in pods}
-print(sum(counts.values()), max(counts, key=counts.get, default="none"))
+busiest = max(counts, key=counts.get, default="none")
+print(sum(counts.values()), busiest, counts.get(busiest, 0))
 ')
       if (( connections >= 200 )) && [[ "$busiest" != "none" ]]; then
         victim=$busiest
-        printf '%s\t%s\t%s\n' "$connections" 4 "$victim" >"$output/fault.tsv"
+        printf '%s\t%s\t%s\t%s\n' "$connections" 4 "$victim" "$victim_connections" >"$output/fault.tsv"
         echo "Prometheus observed $connections viewers after scale-up to four pods."
         break
       fi
@@ -75,7 +76,7 @@ if [[ -z "$victim" ]]; then
   exit 1
 fi
 
-echo "Deleting serving pod $victim to trigger reconnects."
+echo "Deleting serving pod $victim with $victim_connections active connections."
 "${kube[@]}" delete pod "$victim" --grace-period=0 --force --wait=false
 
 result=0
@@ -83,4 +84,18 @@ wait "$load_pid" || result=$?
 load_pid=
 cat "$output/k6.log"
 echo "Results: $output"
+if (( result == 0 )); then
+  python3 - "$output/summary.json" "$victim_connections" <<'PYCODE'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as file:
+    metrics = json.load(file)["metrics"]
+expected = int(sys.argv[2])
+recovery = metrics["replay_recovered_within_10s"]
+if recovery["passes"] < expected or recovery["fails"] != 0:
+    raise SystemExit(f"Expected at least {expected} successful recoveries; got {recovery}")
+print(f"Verified {recovery['passes']} recoveries, covering the {expected} connections on the deleted pod.")
+PYCODE
+fi
 exit "$result"
