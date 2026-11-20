@@ -54,6 +54,7 @@ func replayRoutes(clip recording, startedAt time.Time) *http.ServeMux {
 		metadata.Timeline = &raceTimeline{
 			Events:     clip.Session.Timeline.Events,
 			RaceStates: clip.Session.Timeline.RaceStates,
+			RaceLaps:   clip.Session.Timeline.RaceLaps,
 			TotalLaps:  clip.Session.Timeline.TotalLaps,
 			Drivers: map[string]driverTiming{
 				reference: {Laps: clip.Session.Timeline.Drivers[reference].Laps},

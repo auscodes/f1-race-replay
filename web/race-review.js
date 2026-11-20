@@ -214,7 +214,11 @@ export function setupRaceReview(session) {
     button.type = "button";
     button.disabled = true;
     button.append(time, text);
-    button.addEventListener("click", () => jump?.(event.elapsedMs));
+    button.addEventListener("click", () => {
+      jump(event.elapsedMs);
+      document.querySelector(".replay-track").scrollIntoView({block: "start"});
+      document.querySelector("#scrub").focus({preventScroll: true});
+    });
     item.append(button);
     list.append(item);
     return {elapsed: event.elapsedMs, button};
@@ -225,6 +229,7 @@ export function setupRaceReview(session) {
   return {
     setJump(callback) {
       jump = callback;
+      document.querySelector("#event-link").hidden = eventRows.length === 0;
       for (const {button} of eventRows) button.disabled = false;
     },
     update(elapsed) {

@@ -25,9 +25,19 @@
             <span id="race-control" class="race-control" aria-live="polite"></span>
           </div>
           <div class="map">
+            <div id="map-toolbar" class="map-toolbar" hidden>
+              <h2>Circuit map</h2>
+              <label>Highlight <select id="map-driver" aria-label="Highlight driver"><option value="">Race leader</option></select></label>
+            </div>
             <canvas id="circuit" width="800" height="480" role="img" aria-label="Circuit map with car positions">
               Current car positions are also available in the frame inspector.
             </canvas>
+            <div id="map-detail" class="map-detail" hidden>
+              <div><strong id="map-driver-name"></strong><span id="map-driver-stats"></span></div>
+              <ul id="map-sectors" class="map-sectors" aria-label="Timing sectors" hidden>
+                <li>Sector 1</li><li>Sector 2</li><li>Sector 3</li>
+              </ul>
+            </div>
           </div>
           <section id="analysis-controls" class="analysis-controls" aria-labelledby="timeline-heading" hidden>
             <h2 id="timeline-heading">Race timeline</h2>
@@ -38,8 +48,8 @@
             <div class="playback-controls">
               <button id="play" type="button">Play</button>
               <label>Speed <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option></select></label>
-              <label>Hamilton lap <select id="lap-jump"></select></label>
-              <label>Race event <select id="event-jump"></select></label>
+              <label id="lap-jump-label">Go to lap <select id="lap-jump"></select></label>
+              <a id="event-link" href="#events-heading" hidden>Race events</a>
             </div>
           </section>
         </section>
@@ -96,7 +106,7 @@
 
         <div class="race-tools">
           <section id="events-panel" class="review-section" aria-labelledby="events-heading" hidden>
-            <h3 id="events-heading">Race events</h3>
+            <h3 id="events-heading" tabindex="-1">Race events</h3>
             <ol id="race-events" class="race-events"></ol>
           </section>
 

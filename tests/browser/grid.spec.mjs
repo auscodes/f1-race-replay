@@ -27,7 +27,7 @@ test("mobile full-grid replay updates the race state, comparison, and finishers 
   };
   const raceStates = [value(0, "green"), value(1000, "vsc"), value(3000, "vsc-ending"),
     value(4000, "green"), value(8000, "chequered")];
-  const metadata = {raceStates, totalLaps: 2};
+  const metadata = {raceStates, raceLaps: [value(0, "1"), value(2000, "2")], totalLaps: 2};
   const events = [
     {elapsedMs: 1000, kind: "vsc", label: "Virtual Safety Car deployed"},
     {elapsedMs: 3000, kind: "vsc", label: "Virtual Safety Car ending"},
@@ -38,6 +38,7 @@ test("mobile full-grid replay updates the race state, comparison, and finishers 
   await page.route("**/api/session", async (route) => {
     const session = await (await route.fetch()).json();
     session.drivers = ["01", "16", "99"];
+    session.sectorBreaks = [4, 8];
     session.grid = {"01": {code: "ONE"}, "16": {code: "TWO"}, "99": {code: "OUT"}};
     session.timeline = {...metadata, events, drivers: {"01": {laps: timings["01"].laps}}};
     await route.fulfill({json: session});
@@ -76,17 +77,26 @@ test("mobile full-grid replay updates the race state, comparison, and finishers 
   const highlight = first.getByRole("button");
   await highlight.click();
   await expect(highlight).toHaveAttribute("aria-pressed", "true");
+  const mapDriver = page.getByRole("combobox", {name: "Highlight driver"});
+  await expect(mapDriver).toHaveValue("01");
+  await expect(page.locator("#map-driver-stats")).toContainText("P2");
+  await mapDriver.selectOption("16");
+  await expect(highlight).toHaveAttribute("aria-pressed", "false");
+  await expect(second.getByRole("button")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#map-sectors")).toBeVisible();
 
-  const eventJump = page.locator("#event-jump");
-  await eventJump.selectOption("1000");
+  await page.getByLabel("Go to lap").selectOption({label: "Lap 2"});
+  await expect(page.locator("#elapsed")).toHaveText("0:02.0");
+  await page.getByRole("link", {name: "Race events"}).click();
+  await page.getByRole("button", {name: /Virtual Safety Car deployed/}).click();
   await expect(state).toHaveText("Virtual Safety Car");
-  await eventJump.selectOption("3000");
+  await page.getByRole("button", {name: /Virtual Safety Car ending/}).click();
   await expect(state).toHaveText("Virtual Safety Car ending");
   await expect(lap).toHaveText("Lap 2 / 2");
-  await eventJump.selectOption("4000");
+  await page.getByRole("button", {name: /Track clear/}).click();
   await expect(state).toHaveText("Green flag");
 
-  await eventJump.selectOption("8000");
+  await page.getByRole("button", {name: /Chequered flag/}).click();
   await expect(state).toHaveText("Chequered flag");
   await expect(rows.first()).toContainText("ONE");
   await expect(first.getByRole("img", {name: "Finished"})).toBeVisible();
@@ -106,7 +116,7 @@ test("mobile full-grid replay updates the race state, comparison, and finishers 
   await expect(page.locator("#lap-rows tr")).toHaveCount(2);
   await expect(page.locator("#lap-rows")).not.toContainText("Car 01");
 
-  await eventJump.selectOption("10000");
+  await page.getByRole("button", {name: /Second crossing/}).click();
   await expect(second.getByRole("img", {name: "Finished"})).toBeVisible();
   const slider = page.getByRole("slider", {name: "Replay time"});
   await slider.press("End");

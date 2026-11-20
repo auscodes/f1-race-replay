@@ -9,19 +9,19 @@ export function startAnalysis(session, receiveFrame, setStatus) {
   const play = document.querySelector("#play");
   const speed = document.querySelector("#speed");
   const lapJump = document.querySelector("#lap-jump");
-  const eventJump = document.querySelector("#event-jump");
   const inspector = document.querySelector("#inspector");
   const last = session.durationMs - session.intervalMs;
   scrub.max = last;
   scrub.step = session.intervalMs;
 
-  lapJump.add(new Option("Choose lap", ""));
-  for (const lap of session.timeline.drivers?.[session.drivers[0]]?.laps ?? []) {
+  const laps = session.timeline.raceLaps ?? (!session.grid ? session.timeline.drivers?.[session.drivers[0]]?.laps : undefined);
+  document.querySelector("#lap-jump-label").hidden = !laps?.length;
+  lapJump.add(new Option("Select lap", ""));
+  for (const lap of laps ?? []) {
     lapJump.add(new Option(`Lap ${lap.value}`, lap.elapsedMs));
   }
-  eventJump.add(new Option("Choose event", ""));
   for (const event of session.timeline.events ?? []) {
-    eventJump.add(new Option(`${event.label} · ${clockLabel(event.elapsedMs)}`, event.elapsedMs));
+    if (event.kind !== "vsc" && event.kind !== "flag") continue;
     const mark = document.createElement("span");
     mark.className = event.kind;
     mark.style.left = `${100 * event.elapsedMs / session.durationMs}%`;
@@ -107,12 +107,10 @@ export function startAnalysis(session, receiveFrame, setStatus) {
   }
 
   scrub.addEventListener("change", () => seek(Number(scrub.value)));
-  for (const select of [lapJump, eventJump]) {
-    select.addEventListener("change", () => {
-      if (select.value !== "") jump(Number(select.value));
-      select.value = "";
-    });
-  }
+  lapJump.addEventListener("change", () => {
+    if (lapJump.value !== "") jump(Number(lapJump.value));
+    lapJump.value = "";
+  });
   play.addEventListener("click", () => {
     if (playing) {
       setPlaying(false);

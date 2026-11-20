@@ -29,7 +29,7 @@ python3 tools/import_barcelona_grid.py
 go run . -recording .recordings/barcelona-2026-grid.json
 ```
 
-Full-race recordings open in local analysis mode. Use the race timeline to jump to laps, pit stops, Virtual Safety Car messages, or the checkered flag. The map shows the race leader’s current lap and race-control state. The comparison panel starts with Hamilton and Russell and lets you select any two drivers to review their gaps to the leader and completed lap times. Choose **Join shared playback** to follow the server's clock over WebSocket.
+Full-race recordings open in local analysis mode. Jump to a race lap from the playback controls, or pick a pit stop, Virtual Safety Car message, or the chequered flag in Race events. The map shows the three timing sectors, race-control state, and the leader’s lap. Select a car on the map, in the driver picker, or in the standings to see its current position, gap, tyres, and last completed lap. The comparison panel starts with Hamilton and Russell and lets you select any two drivers to review their gaps to the leader and completed lap times. Choose **Join shared playback** to follow the server's clock over WebSocket.
 
 The two-driver importer remains available for the 50-second Virtual Safety Car clip and the full Hamilton–Russell comparison.
 
