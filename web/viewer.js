@@ -1,5 +1,6 @@
 import { startAnalysis } from "./analysis.js";
 import { setupRaceReview } from "./race-review.js";
+import { setupTimingTower, teamColor } from "./timing-tower.js";
 
 const canvas = document.querySelector("#circuit");
 const connection = document.querySelector("#connection");
@@ -22,7 +23,7 @@ function raceTime(milliseconds) {
   return `${minutes}:${seconds.toFixed(1).padStart(4, "0")}`;
 }
 
-function drawMap(track, colors) {
+function drawMap(track, colors, grid) {
   const ctx = canvas.getContext("2d");
   const outline = new Path2D();
   const [start, next] = track;
@@ -30,7 +31,7 @@ function drawMap(track, colors) {
   for (const point of track.slice(1)) outline.lineTo(point.x, point.y);
   outline.closePath();
 
-  return function draw(positions = []) {
+  return function draw(positions = [], focused) {
     const displayWidth = canvas.clientWidth;
     if (displayWidth === 0) return;
     const width = Math.round(displayWidth * window.devicePixelRatio);
@@ -66,17 +67,29 @@ function drawMap(track, colors) {
     ctx.textAlign = "center";
     ctx.fillText("START / FINISH", start.x + 4, start.y + 43);
 
-    for (const { driver, x, y } of positions) {
+    const tracked = focused && positions.find(({driver}) => driver === focused);
+    const cars = tracked ? [...positions.filter(({driver}) => driver !== focused), tracked] : positions;
+    for (const { driver, x, y } of cars) {
+      const showNumber = !grid || driver === focused;
       ctx.beginPath();
-      ctx.arc(x, y, 13 * labelScale, 0, 2 * Math.PI);
+      ctx.arc(x, y, (showNumber ? 13 * labelScale : 6), 0, 2 * Math.PI);
       ctx.fillStyle = colors.get(driver);
       ctx.fill();
       ctx.lineWidth = 3;
-      ctx.strokeStyle = "#211a1b";
+      ctx.strokeStyle = driver === focused ? "#fff" : "#211a1b";
       ctx.stroke();
-      ctx.fillStyle = "#211a1b";
-      ctx.font = `bold ${12 * labelScale}px ui-monospace, monospace`;
-      ctx.fillText(driver, x, y + 4 * labelScale);
+      if (showNumber) {
+        ctx.fillStyle = grid ? "#fff" : "#211a1b";
+        if (grid) {
+          ctx.beginPath();
+          ctx.arc(x, y, 10 * labelScale, 0, 2 * Math.PI);
+          ctx.fillStyle = "#211a1b";
+          ctx.fill();
+          ctx.fillStyle = "#fff";
+        }
+        ctx.font = `bold ${12 * labelScale}px ui-monospace, monospace`;
+        ctx.fillText(driver, x, y + 4 * labelScale);
+      }
     }
   };
 }
@@ -115,9 +128,15 @@ async function start() {
   const drivers = document.querySelector("#drivers");
   const colors = new Map();
   const timing = new Map();
+  const grid = session.grid;
+  if (grid) {
+    document.body.classList.add("full-grid");
+    document.querySelector("#compact-drivers").hidden = true;
+  }
   session.drivers.forEach((driver, i) => {
-    const color = palette[i % palette.length];
+    const color = grid ? teamColor(grid[driver]) : palette[i % palette.length];
     colors.set(driver, color);
+    if (grid) return;
     const item = document.createElement("li");
     const marker = document.createElement("span");
     marker.className = "driver-marker";
@@ -134,17 +153,36 @@ async function start() {
     drivers.append(item);
   });
 
-  const draw = drawMap(session.track, colors);
-  const review = session.timeline ? setupRaceReview(session) : undefined;
-  let latestFrame;
-  let capturedFrame;
+  const draw = drawMap(session.track, colors, grid);
+  let review = session.timeline && !grid ? setupRaceReview(session) : undefined;
+  let latestFrame, capturedFrame, focused, jump;
+  let requestedTiming = false;
+  const tower = grid ? setupTimingTower(session, (driver) => {
+    focused = driver;
+    draw((capturedFrame ?? latestFrame)?.positions, focused);
+  }) : undefined;
+
+  async function loadTiming() {
+    try {
+      const response = await fetch("/api/timing");
+      if (!response.ok) throw new Error(`Timing request failed (${response.status})`);
+      session.timeline = await response.json();
+      tower.setTiming(session.timeline);
+      review = setupRaceReview(session, session.drivers.slice(0, 2));
+      if (jump) review.setJump(jump);
+      showFrame(capturedFrame ?? latestFrame);
+    } catch {
+      tower.showError();
+    }
+  }
 
   function showFrame(frame) {
     if (!frame) return;
     elapsed.textContent = raceTime(frame.elapsedMs);
     sequence.textContent = frame.sequence;
     progress.value = frame.elapsedMs;
-    draw(frame.positions);
+    draw(frame.positions, focused);
+    tower?.update(frame.elapsedMs);
     review?.update(frame.elapsedMs);
     for (const [driver, details] of timing) {
       const data = session.timeline.drivers[driver];
@@ -167,7 +205,7 @@ async function start() {
     showFrame(capturedFrame);
   }
 
-  new ResizeObserver(() => draw((capturedFrame ?? latestFrame)?.positions)).observe(canvas);
+  new ResizeObserver(() => draw((capturedFrame ?? latestFrame)?.positions, focused)).observe(canvas);
   capture.addEventListener("click", captureFrame);
   inspector.addEventListener("toggle", () => {
     if (inspector.open) {
@@ -183,6 +221,10 @@ async function start() {
     latestFrame = frame;
     if (!inspector.open) showFrame(frame);
     else if (!capturedFrame) captureFrame();
+    if (tower && !requestedTiming) {
+      requestedTiming = true;
+      void loadTiming();
+    }
   }
 
   if (session.timeline) {
@@ -194,12 +236,12 @@ async function start() {
     if (!shared) {
       document.querySelector("#playback-mode").textContent = "Local analysis";
       progress.hidden = true;
-      const jump = startAnalysis(session, receiveFrame, (message, state = "loading") => {
+      jump = startAnalysis(session, receiveFrame, (message, state = "loading") => {
         if (connection.dataset.state === state && connection.textContent === message) return;
         connection.dataset.state = state;
         connection.textContent = message;
       });
-      review.setJump(jump);
+      review?.setJump(jump);
       return;
     }
   }

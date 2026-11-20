@@ -214,3 +214,85 @@ pre {
 @media (max-width: 850px) {
   .race-review .replay-layout { grid-template-columns: minmax(0, 1fr); }
 }
+
+.full-grid .replay-layout { grid-template-columns: minmax(0, 1fr) minmax(365px, 400px); }
+.tower-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 9px;
+  border-top: 1px solid var(--rule);
+}
+.timing .tower-heading h3 { padding: 0; border: 0; }
+.tower-heading select {
+  padding: 5px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: #faf7f6;
+  color: var(--ink);
+  font: .75rem system-ui, sans-serif;
+}
+.tower-heading select:disabled { color: var(--muted); }
+#tower-message { margin-block: 0 8px; color: var(--muted); font-size: .78rem; }
+.tower-scroll { max-height: 26rem; overflow: auto; scrollbar-color: var(--rule) transparent; }
+.tower-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .75rem; text-align: left; }
+.tower-table th, .tower-table td { padding: 0 5px; white-space: nowrap; }
+.tower-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 30px;
+  background: #eee5e2;
+  color: var(--muted);
+  font-weight: 650;
+}
+.tower-table td { height: 35px; font-variant-numeric: tabular-nums; }
+.tower-table tbody tr:nth-child(even) { background: #f5edeb; }
+.tower-table tbody tr.is-tracked { background: #ebdbd4; }
+.tower-table tbody td:first-child { font-weight: 700; }
+.tower-table td:nth-child(3), .tower-table td:nth-child(5) { font-family: var(--mono); }
+.tower-table abbr { text-decoration: none; }
+.track-driver {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 0;
+  font-size: inherit;
+  font-weight: 750;
+}
+.track-driver::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border: 1px solid #70615e;
+  border-radius: 50%;
+  background: var(--team);
+}
+.track-driver:focus-visible { outline-offset: -2px; }
+.finish-flag {
+  display: inline-block;
+  width: 16px;
+  height: 12px;
+  border: 1px solid var(--ink);
+  vertical-align: middle;
+  background: repeating-conic-gradient(var(--ink) 0 25%, white 0 50%) 0 0 / 7px 7px;
+}
+.finish-flag[hidden] { display: none; }
+.tower-table [data-compound="S"] { color: #a32c30; }
+.tower-table [data-compound="M"] { color: #775900; }
+.tower-table [data-compound="I"] { color: #1c6653; }
+.tower-table [data-compound="W"] { color: #265593; }
+.full-grid .race-events { max-height: 23rem; overflow: auto; }
+@media (max-width: 850px) {
+  .full-grid .replay-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 430px) {
+  .full-grid .timing { padding-inline: 9px; }
+  .tower-table th, .tower-table td { padding-inline: 3px; }
+  .tower-table { font-size: .72rem; }
+}
