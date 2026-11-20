@@ -8,7 +8,6 @@ spec:
     name: replay
   minReplicaCount: 2
   maxReplicaCount: 4
-  pollingInterval: 5
   advanced:
     horizontalPodAutoscalerConfig:
       behavior:

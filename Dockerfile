@@ -16,6 +16,6 @@ ENTRYPOINT ["/f1-race-replay"]
 CMD ["-addr", ":8080"]
 
 FROM runtime AS barcelona
-COPY --from=recording /barcelona-2026-grid.json /data/barcelona-2026-grid.json
+COPY --chmod=0444 --from=recording /barcelona-2026-grid.json /barcelona-2026-grid.json
 
 FROM runtime AS app

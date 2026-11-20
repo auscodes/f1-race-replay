@@ -64,7 +64,7 @@ spec:
         - name: replay
           image: f1-race-replay:local
           imagePullPolicy: Never
-          args: ["-addr", ":8080", "-recording", "/data/barcelona-2026-grid.json"]
+          args: ["-addr", ":8080", "-recording", "/barcelona-2026-grid.json"]
           env:
             - name: REPLAY_REDIS_URL
               value: redis://redis:6379/0
