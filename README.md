@@ -34,7 +34,7 @@ python3 tools/import_barcelona.py --full
 go run . -recording .recordings/barcelona-2026-full.json
 ```
 
-Full-race recordings open in local analysis mode. Use **Join shared playback** to follow the server's clock over WebSocket.
+Full-race recordings open in local analysis mode. Review the gap-to-leader chart, compare completed lap times, or jump from the event list to a pit stop or Virtual Safety Car message. The pit-stop list shows stationary time and total pit-lane time when available. Use **Join shared playback** to follow the server's clock over WebSocket.
 
 For a recording already stored in S3, pass its object URI. Configure the bucket's region and AWS credentials with permission to read that object. [AWS SDK configuration](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configure-gosdk.html)
 

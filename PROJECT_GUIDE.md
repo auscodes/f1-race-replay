@@ -56,6 +56,7 @@ One server clock means late joiners receive the current frame as soon as they co
 - **Use nearby observations.** If a frame falls between two samples at most one second apart, estimate the position between them. Across a longer gap or beyond the available data, leave that driver's position out of the frame. The Barcelona source gave both drivers positions in all 250 frames.
 - **Use one map transform.** Russell's lap 40 gives the main circuit outline. The track and both cars get the same scale, offset, and vertical-axis flip. The outline approximates a driven lap. Pit-lane positions can appear beside it, and the source coordinates only support an approximate view of each car's progress. [OpenF1 location data](https://openf1.org/docs/#location)
 - **Keep race events separate from frames.** Lap changes, timing, pit stops, and VSC messages use the same elapsed clock as the positions. The two drivers can be on different laps at the same instant. Gaps come from the timing feed and expire after 15 seconds without an update. The full recording contains 27,841 frames. Position data is available for both drivers in 27,610 of them. [OpenF1 timing data](https://openf1.org/docs/#intervals)
+- **Show results at the point they become known.** A lap time enters the comparison at the lap's estimated finish, so seeking backwards also rolls back the fastest-lap value. The chart shows zero while the position feed records a driver in the lead. Elsewhere it leaves breaks where numeric gap samples are unavailable or more than 15 seconds apart. The event list shows pit-lane time and stationary stop time separately. [OpenF1 lap and pit data](https://openf1.org/docs/#laps)
 
 ## Where to look in the code
 
@@ -69,6 +70,7 @@ One server clock means late joiners receive the current frame as soon as they co
 | [stream.go](stream.go) | Upgrades the connection, sends frames, and skips ahead if a write falls behind. |
 | [web/viewer.js](web/viewer.js) | Fetches the session, opens the socket, and calls `ctx.arc` to place each car. |
 | [web/analysis.js](web/analysis.js) | Handles the local clock, segment requests, and lap and event jumps. |
+| [web/race-review.js](web/race-review.js) | Draws gap history, shows completed laps at the current replay time, and connects event buttons to local seeking. |
 
 ## Trace one frame
 
