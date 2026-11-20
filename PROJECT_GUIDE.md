@@ -28,7 +28,39 @@ flowchart LR
 
 ### “What are the main user stories?”
 
-> The first user wants to understand a race decision. They can jump to a pit stop or a Virtual Safety Car period and compare two drivers around it. The second user wants to follow someone outside the lead battle. All 22 drivers are in the standings, and selecting one highlights their car on the map. The third user wants to discuss a race with someone watching at the same time. Shared playback gives both viewers the same race moment, even if one joins later.
+> There are three. One viewer wants to investigate a specific race decision. Another wants to follow a driver anywhere in the field. A third wants to talk about the race with someone who’s watching at the same time.
+
+Each answer below takes about three minutes at a conversational pace.
+
+#### “Walk me through how someone would analyze a race decision.”
+
+> Imagine I watched the Barcelona Grand Prix and wanted to understand what happened to Hamilton and Russell around a Virtual Safety Car. I might remember Hamilton coming into the pits, but the final result gives me very little context about what was happening just before the stop. The first user story is about being able to return to that moment and study it at my own pace.
+>
+> I’d open the replay in personal analysis mode, go to Race events, and select the first Virtual Safety Car deployment, about 55 minutes into the recording. The viewer takes me to that moment and brings me back to the circuit map. I can see which lap the race leader is on, where the cars are, and that the Virtual Safety Car is active. I can pause, seek backward to see the field before the deployment, or pick Hamilton’s pit stop to see when it happened. Where the archive includes the details, the event shows stationary time separately from time spent in the pit lane.
+>
+> Next I’d compare Hamilton and Russell. The chart shows each driver’s gap to the race leader, and the lap table shows their last and fastest completed laps at my playhead. I can switch either driver while staying at the same point in the race. That lets me look at a third driver’s race without losing the moment I was investigating. I’d use the chart to describe what changed around the stop. The timing also gives me a starting point for a question about strategy, since traffic, tyres, and the Virtual Safety Car can all affect those gaps.
+>
+> The key engineering decision was to make a jump behave as if I’d played the race up to that point. The browser requests the 20-second block containing the selected frame and uses that frame’s timestamp across the map, standings, and race-control banner. When I seek backward before deployment, the banner returns to green because it looks up the last transition at that time. That’s also the example I’d demo in an interview. One click takes me to the event, a backward seek rolls back the state, and changing the comparison pair keeps the playhead in place. [Local seek logic](web/analysis.js) · [Race-state lookup](web/race-context.js)
+
+#### “Why did you expand it to the full field? What does a viewer get out of that?”
+
+> The first historical version focused on Hamilton and Russell. That was a manageable starting point for getting real location and timing data to play back together. Once I saw the two-driver replay, I wanted to be able to follow a driver outside the main battle. If I’m interested in Norris, for example, I want to know who he’s racing around, how far ahead the next driver is, and what tyres he’s on. Those questions motivated the move to the full grid.
+>
+> In the Barcelona replay, I can pick Norris from the standings, the driver picker, or the circuit map. His marker gets a label, his row is highlighted, and I can see his position, gap, lap, tyres, and last lap when that information is available. The rest of the field stays visible, so I can see his race in context. I can switch the leaderboard from gap to the race leader to interval to the car ahead. Those answer different questions. One tells me how far he is from first place. The other helps me see how close his immediate battle is.
+>
+> The most important design choice was to separate the map from the timing feed. Think about a car that’s been lapped. It can be physically ahead of the race leader on the main straight while being behind in the standings. The map shows where the cars are. The leaderboard uses recorded timing to show which lap and position those cars are on, including a gap reported as a lap deficit. The data also updates at different rates. If a gap goes stale, the viewer shows a dash until there’s a usable update.
+>
+> I also wanted a clear finish for each driver. At Barcelona, Hamilton and Russell crossed about 19 and a half seconds apart. Their checkered flags appear at their own crossings, and classified lapped finishers also get individual finish times. The final frame shows the official order. That gave me a concrete way to judge the full-grid change. A viewer could pick someone farther down the field, follow their race, and understand when their race ended. [Full-grid leaderboard](https://github.com/auscodes/f1-race-replay/pull/8) · [Map and driver selection](https://github.com/auscodes/f1-race-replay/pull/10)
+
+#### “Why would anyone want synchronized playback of a race that already happened?”
+
+> Imagine two friends reviewing a race they already know the result of. They’re trying to figure out what happened around a pit stop. One says, “Look at where Russell is now,” but if their replays started at different times, the other person could still be watching the previous lap. They both have the same recording. What they need is a shared reference for the moment they’re talking about.
+>
+> In shared playback, both friends can open the replay and follow the clock on the same Go server. If one arrives later, their browser gets the frame the server is showing at that moment. If their connection drops briefly, the replay can reconnect and pick up at the server’s current position in the race. This is why I kept personal analysis as a separate mode. When I’m studying a particular pit stop, I want control over pause, speed, and seeking. When I’m watching with someone else, I want “right now” to refer to the same part of the race for both of us.
+>
+> The implementation gives each WebSocket connection its own send loop, but the loops use the same server start time to figure out which frame to send. Each message contains a complete snapshot of the available car positions. A new viewer can draw the first frame they receive. If a connection falls behind, the next send picks the current frame instead of queuing all the ones the viewer missed. That favors staying close to the conversation, with the trade-off that we send repeated coordinates and a slow viewer may skip some frames.
+>
+> The scope I can demonstrate today is two viewers on the same server. I’d open one shared tab, let it run, then open a second and show that it joins in progress. The limitation becomes clear if I start two Go servers at different times. They can have identical race files and still disagree about the live replay position because each owns its own clock. That’s the next system-design problem. The data is already shareable, and the servers need to agree on which moment they’re showing. [Shared send loop](stream.go) · [Late-join tests](stream_test.go) · [Reconnect test](tests/browser/replay.spec.mjs)
 
 ### “What was your contribution? How did you use Codex?”
 
