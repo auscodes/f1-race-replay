@@ -32,6 +32,29 @@ type driverTiming struct {
 	Positions     []timedValue `json:"positions"`
 	Gaps          []timedValue `json:"gaps"`
 	CompletedLaps []lapResult  `json:"completedLaps,omitempty"`
+	Intervals     []timedValue `json:"intervals,omitempty"`
+	Tyres         []tyreStint  `json:"tyres,omitempty"`
+	Outcome       *raceOutcome `json:"outcome,omitempty"`
+}
+
+type tyreStint struct {
+	LapStart    int    `json:"lapStart"`
+	LapEnd      int    `json:"lapEnd"`
+	Compound    string `json:"compound"`
+	StartingAge *int   `json:"startingAge,omitempty"`
+}
+
+type raceOutcome struct {
+	ElapsedMS int64  `json:"elapsedMs"`
+	Status    string `json:"status"`
+	Position  int    `json:"position,omitempty"`
+	Gap       string `json:"gap,omitempty"`
+}
+
+type gridDriver struct {
+	Code  string `json:"code"`
+	Team  string `json:"team"`
+	Color string `json:"color"`
 }
 
 type lapResult struct {
@@ -54,16 +77,17 @@ type raceTimeline struct {
 }
 
 type session struct {
-	Name        string            `json:"name"`
-	Caption     string            `json:"caption,omitempty"`
-	Drivers     []string          `json:"drivers"`
-	DriverNames map[string]string `json:"driverNames,omitempty"`
-	Track       []point           `json:"track"`
-	DurationMS  int64             `json:"durationMs"`
-	Source      *recordingSource  `json:"source,omitempty"`
-	IntervalMS  int64             `json:"intervalMs"`
-	SegmentSize int64             `json:"segmentSize"`
-	Timeline    *raceTimeline     `json:"timeline,omitempty"`
+	Name        string                `json:"name"`
+	Caption     string                `json:"caption,omitempty"`
+	Drivers     []string              `json:"drivers"`
+	DriverNames map[string]string     `json:"driverNames,omitempty"`
+	Track       []point               `json:"track"`
+	DurationMS  int64                 `json:"durationMs"`
+	Source      *recordingSource      `json:"source,omitempty"`
+	IntervalMS  int64                 `json:"intervalMs"`
+	SegmentSize int64                 `json:"segmentSize"`
+	Timeline    *raceTimeline         `json:"timeline,omitempty"`
+	Grid        map[string]gridDriver `json:"grid,omitempty"`
 }
 
 type recording struct {
@@ -99,7 +123,11 @@ func loadRecording(data []byte) (recording, error) {
 	}
 	clip.Session.DurationMS = int64(len(clip.Frames)) * clip.IntervalMS
 	clip.Session.IntervalMS = clip.IntervalMS
-	clip.Session.SegmentSize = max(1, 60_000/clip.IntervalMS)
+	segmentMS := int64(60_000)
+	if len(clip.Session.Grid) > 0 {
+		segmentMS = 20_000
+	}
+	clip.Session.SegmentSize = max(1, segmentMS/clip.IntervalMS)
 	return clip, nil
 }
 
