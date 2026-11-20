@@ -52,7 +52,9 @@ func replayRoutes(clip recording, startedAt time.Time) *http.ServeMux {
 		// Keep the lap and event selectors usable before the full timing feed arrives.
 		reference := metadata.Drivers[0]
 		metadata.Timeline = &raceTimeline{
-			Events: clip.Session.Timeline.Events,
+			Events:     clip.Session.Timeline.Events,
+			RaceStates: clip.Session.Timeline.RaceStates,
+			TotalLaps:  clip.Session.Timeline.TotalLaps,
 			Drivers: map[string]driverTiming{
 				reference: {Laps: clip.Session.Timeline.Drivers[reference].Laps},
 			},
