@@ -2,7 +2,7 @@
 
 ## Start here
 
-Read in this order. You can complete the first three steps with Docker stopped.
+Read in this order. You can read every guide with Docker stopped. The optional exercises tell you which services to start.
 
 | Read | What you should be able to explain afterward |
 | --- | --- |
