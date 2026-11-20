@@ -7,11 +7,13 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type frameStream struct {
-	clip      recording
-	startedAt time.Time
+	clip        recording
+	clock       *playbackClock
+	connections prometheus.Gauge
 }
 
 func (s frameStream) serve(w http.ResponseWriter, req *http.Request) {
@@ -19,6 +21,8 @@ func (s frameStream) serve(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		return // Accept sends an HTTP response when the handshake fails.
 	}
+	s.connections.Inc()
+	defer s.connections.Dec()
 	defer conn.CloseNow()
 	ctx := conn.CloseRead(req.Context())
 
@@ -30,7 +34,8 @@ func (s frameStream) serve(w http.ResponseWriter, req *http.Request) {
 			return
 		case <-timer.C:
 		}
-		current := s.clip.frameAt(time.Since(s.startedAt))
+		startedAt := s.clock.startedAt()
+		current := s.clip.frameAt(max(0, time.Since(startedAt)))
 		writeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		err := wsjson.Write(writeCtx, conn, current)
 		cancel()
@@ -40,7 +45,7 @@ func (s frameStream) serve(w http.ResponseWriter, req *http.Request) {
 
 		// Align each connection with the shared clock. If a write falls behind,
 		// the next send picks the current frame without queuing older ones.
-		next := s.startedAt.Add(time.Duration((current.Sequence+1)*s.clip.IntervalMS) * time.Millisecond)
+		next := startedAt.Add(time.Duration((current.Sequence+1)*s.clip.IntervalMS) * time.Millisecond)
 		timer.Reset(time.Until(next))
 	}
 }

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
@@ -21,7 +23,7 @@ func TestJoiningStreamUsesCurrentFrame(t *testing.T) {
 			{{Driver: "01", point: point{X: 300, Y: 120}}},
 		},
 	}
-	server := httptest.NewServer(replayRoutes(clip, time.Now().Add(-90*time.Minute)))
+	server := httptest.NewServer(replayRoutes(clip, newPlaybackClock(time.Now().Add(-90*time.Minute))))
 	defer server.Close()
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
@@ -48,7 +50,7 @@ func TestStreamAdvancesPastInitialFrame(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(replayRoutes(clip, time.Now()))
+	server := httptest.NewServer(replayRoutes(clip, newPlaybackClock(time.Now())))
 	defer server.Close()
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
@@ -73,5 +75,60 @@ func TestStreamAdvancesPastInitialFrame(t *testing.T) {
 	index := next.Sequence % int64(len(clip.Frames))
 	if next.ElapsedMS != index*clip.IntervalMS || !slices.Equal(next.Positions, clip.Frames[index]) {
 		t.Fatalf("next frame = %+v, want the full snapshot at index %d", next, index)
+	}
+}
+
+func TestConnectionMetricTracksOpenSockets(t *testing.T) {
+	clip, err := loadRecording(demo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(replayRoutes(clip, newPlaybackClock(time.Now())))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+
+	reported := func(expected string) bool {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/metrics", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Contains(string(body), "\nf1_replay_websocket_connections "+expected+"\n")
+	}
+	if !reported("0") {
+		t.Fatal("connection gauge should start at zero")
+	}
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	var got frame
+	if err := wsjson.Read(ctx, conn, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reported("1") {
+		t.Fatal("connection gauge should include an established stream")
+	}
+	if err := conn.CloseNow(); err != nil {
+		t.Fatal(err)
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for !reported("0") {
+		select {
+		case <-ctx.Done():
+			t.Fatal("gauge did not return to zero after disconnect")
+		case <-ticker.C:
+		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -16,6 +17,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 //go:embed testdata/demo.json
@@ -25,12 +29,11 @@ var demo []byte
 var web embed.FS
 
 func readRecording(ctx context.Context, location string) (recording, error) {
-	if location == "" {
-		return loadRecording(demo)
-	}
 	var data []byte
 	var err error
-	if strings.HasPrefix(location, "s3://") {
+	if location == "" {
+		data = demo
+	} else if strings.HasPrefix(location, "s3://") {
 		data, err = readS3Object(ctx, location)
 	} else {
 		data, err = os.ReadFile(location)
@@ -42,10 +45,11 @@ func readRecording(ctx context.Context, location string) (recording, error) {
 	if err != nil {
 		return recording{}, fmt.Errorf("recording %q: %w", location, err)
 	}
+	clip.id = fmt.Sprintf("%x", sha256.Sum256(data))
 	return clip, nil
 }
 
-func replayRoutes(clip recording, startedAt time.Time) *http.ServeMux {
+func replayRoutes(clip recording, clock *playbackClock) *http.ServeMux {
 	mux := http.NewServeMux()
 	metadata := clip.Session
 	if len(metadata.Grid) > 0 && metadata.Timeline != nil {
@@ -88,7 +92,17 @@ func replayRoutes(clip recording, startedAt time.Time) *http.ServeMux {
 			log.Printf("send replay segment: %v", err)
 		}
 	})
-	stream := frameStream{clip: clip, startedAt: startedAt}
+	registry := prometheus.NewRegistry()
+	connections := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "f1_replay_websocket_connections",
+		Help: "Number of currently open replay WebSocket connections on this server.",
+	})
+	registry.MustRegister(connections)
+	mux.Handle("GET /metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	stream := frameStream{clip: clip, clock: clock, connections: connections}
 	mux.HandleFunc("GET /ws", stream.serve)
 	return mux
 }
@@ -132,6 +146,7 @@ func raceTimingHandler(timeline *raceTimeline) http.HandlerFunc {
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "address to listen on")
+	resetClock := flag.Bool("reset-shared-clock", false, "reset the Redis clock for this recording and exit")
 	recordingLocation := flag.String("recording", "", "local path or s3://bucket/key for a prepared JSON recording")
 	flag.Parse()
 
@@ -145,7 +160,29 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	mux := replayRoutes(clip, time.Now())
+	clock := newPlaybackClock(time.Now())
+	if redisURL := os.Getenv("REPLAY_REDIS_URL"); redisURL != "" {
+		shared, err := newRedisReplayClock(redisURL, clip.id)
+		if err != nil {
+			log.Fatal(err)
+		}
+		operation := "read"
+		if *resetClock {
+			operation = "reset"
+		}
+		if err := shared.refresh(context.Background(), clock, operation); err != nil {
+			log.Fatal(err)
+		}
+		if *resetClock {
+			_ = shared.client.Close()
+			log.Print("shared replay clock reset")
+			return
+		}
+		go shared.watch(context.Background(), clock, clockRefreshInterval)
+	} else if *resetClock {
+		log.Fatal("-reset-shared-clock requires REPLAY_REDIS_URL")
+	}
+	mux := replayRoutes(clip, clock)
 	mux.Handle("GET /", http.FileServerFS(viewer))
 	server := http.Server{
 		Addr:              *addr,

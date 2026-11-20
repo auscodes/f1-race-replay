@@ -12,6 +12,16 @@ jobs:
   go:
     name: Go checks
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7.4.12-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 1s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -27,6 +37,8 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
+        env:
+          REPLAY_TEST_REDIS_URL: redis://127.0.0.1:6379/0
         run: go test -race ./...
 
   importer:
