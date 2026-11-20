@@ -1,6 +1,6 @@
 # F1 Race Replay
 
-F1 Race Replay renders recorded car positions on a circuit map. Viewers connected to the same server share a playback timeline and can join a replay in progress. The bundled demo uses a fictional circuit and a 12-second synthetic recording.
+F1 Race Replay renders recorded car positions on a circuit map. Viewers share a playback timeline and can join a replay in progress. Configure Redis to share the clock across Go replicas. The bundled demo uses a fictional circuit and a 12-second synthetic recording.
 
 ## Quick start
 
@@ -44,6 +44,27 @@ For a recording already stored in S3, pass its object URI. Configure the bucket'
 go run . -recording s3://your-bucket/clips/barcelona-2026.json
 ```
 
+## Shared playback across servers
+
+Set `REPLAY_REDIS_URL` on each server and use identical recording bytes. A local Redis can be started with `docker run --rm -p 127.0.0.1:6379:6379 redis:7.4.12-alpine`. Run the two Go commands in separate terminals:
+
+```sh
+REPLAY_REDIS_URL=redis://127.0.0.1:6379/0 go run . -addr 127.0.0.1:8080
+REPLAY_REDIS_URL=redis://127.0.0.1:6379/0 go run . -addr 127.0.0.1:8081
+```
+
+Those commands use the bundled demo. For Barcelona, add `-recording .recordings/barcelona-2026-grid.json` to both, then choose **Join shared playback** in each viewer. To reset the shared clock, run the command below with the same recording selection. It changes the timeline for every connected shared viewer.
+
+```sh
+REPLAY_REDIS_URL=redis://127.0.0.1:6379/0 go run . -reset-shared-clock
+```
+
+The default startup uses a process-local clock. The [Redis design notes](docs/REDIS_CLOCK.md) explain clock ownership and how to verify cross-server playback.
+
+## Kubernetes
+
+The [local Kubernetes walkthrough](docs/DEPLOYMENT.md) packages the replay, configures Prometheus and KEDA, and runs the k6 load and recovery test.
+
 ## Interfaces
 
 | Endpoint | Purpose |
@@ -53,6 +74,8 @@ go run . -recording s3://your-bucket/clips/barcelona-2026.json
 | `GET /api/segments/{index}` | Position frames for local playback and seeking. Full-grid segments cover 20 seconds. |
 | `GET /api/timing` | Full-grid timing, tyre stints, and race outcomes, loaded after the first map frame |
 | `GET /ws` | WebSocket stream of timestamped position snapshots |
+| `GET /readyz` | Readiness after the recording and clock are initialized |
+| `GET /metrics` | Prometheus gauge for open replay WebSockets |
 
 ## Development
 
