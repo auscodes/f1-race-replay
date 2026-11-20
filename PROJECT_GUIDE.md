@@ -1,6 +1,6 @@
 # F1 Race Replay project guide
 
-F1 Race Replay lets people study a race moment by replaying car positions on a track map. A shared timeline lets two viewers discuss the same moment, even if one joins midway. The historical clip follows Lewis Hamilton and George Russell for 50 seconds around Hamilton's final pit stop in Barcelona in 2026. [Formula 1 race report](https://www.formula1.com/en/latest/article/hamilton-claims-stellar-maiden-grand-prix-victory-for-ferrari-in-barcelona-as-antonelli-suffers-shock-retirement.4yCXiPLHUdcnl2BwNpqUIa)
+F1 Race Replay lets people study a race by replaying car positions on a track map. The Barcelona recording follows Lewis Hamilton and George Russell from lights out through both drivers' finishes, almost 93 minutes. A 50-second clip around Hamilton's final pit stop remains available for quick checks. [Formula 1 race report](https://www.formula1.com/en/latest/article/hamilton-claims-stellar-maiden-grand-prix-victory-for-ferrari-in-barcelona-as-antonelli-suffers-shock-retirement.4yCXiPLHUdcnl2BwNpqUIa)
 
 ## Architecture
 
@@ -11,6 +11,7 @@ flowchart LR
     A --> B["Go server<br/>One shared playback clock"]
     C["Browser"] -->|"HTTP GET / and /api/session"| B
     B -->|"HTTP responses<br/>Page, assets, session metadata"| C
+    B -->|"HTTP /api/segments/{index}<br/>Local analysis"| C
     B -->|"WebSocket /ws<br/>Current car positions"| C
     C --> D["Canvas<br/>Draws the track and cars"]
 ```
@@ -22,6 +23,10 @@ flowchart LR
 3. **Open the position stream.** The browser connects to `/ws`. In this app, that starts as an HTTP/1.1 upgrade request. Go replies with `101 Switching Protocols` and the connection stays open as a WebSocket. The server sends the current frame immediately, then sends a new snapshot every 200 ms during steady playback.
 
 HTTP request and response fit the page and map because the browser needs them once. A WebSocket lets the server push changing positions over one open connection. Polling could do the job with repeated requests. Server-Sent Events (SSE) could also carry this one-way stream. WebSockets support messages in both directions if shared playback controls are added later.
+
+**Local analysis** starts paused and fetches the first minute of positions over HTTP. Seeking requests the segment for the selected time. The browser keeps up to five segments and prefetches the next one near a boundary. The local clock controls play, pause, and speed. **Shared playback** uses the server clock and the WebSocket.
+
+The prepared race file is 2.21 MB. The metadata and first position segment total about 99 KB before compression. In one Chromium run at a simulated 1 Mbps and 80 ms latency, the first frame appeared in about 1.8 seconds and jumping to Hamilton's final stop took about 0.3 seconds.
 
 To see the difference, open the browser's Network tab and reload. Inspect the JSON response from `/api/session`, then open the `/ws` connection and watch messages keep arriving.
 
@@ -50,6 +55,7 @@ One server clock means late joiners receive the current frame as soon as they co
 - **Align on source timestamps.** Both drivers use the same UTC ticks, 200 ms apart. We sort their samples, collapse identical duplicates, and reject conflicting positions at the same timestamp.
 - **Use nearby observations.** If a frame falls between two samples at most one second apart, estimate the position between them. Across a longer gap or beyond the available data, leave that driver's position out of the frame. The Barcelona source gave both drivers positions in all 250 frames.
 - **Use one map transform.** Russell's lap 40 gives the main circuit outline. The track and both cars get the same scale, offset, and vertical-axis flip. The outline approximates a driven lap. Pit-lane positions can appear beside it, and the source coordinates only support an approximate view of each car's progress. [OpenF1 location data](https://openf1.org/docs/#location)
+- **Keep race events separate from frames.** Lap changes, timing, pit stops, and VSC messages use the same elapsed clock as the positions. The two drivers can be on different laps at the same instant. Gaps come from the timing feed and expire after 15 seconds without an update. The full recording contains 27,841 frames. Position data is available for both drivers in 27,610 of them. [OpenF1 timing data](https://openf1.org/docs/#intervals)
 
 ## Where to look in the code
 
@@ -62,10 +68,11 @@ One server clock means late joiners receive the current frame as soon as they co
 | [replay.go](replay.go) | Defines the data types and uses `frameAt` to select a row in the clip. |
 | [stream.go](stream.go) | Upgrades the connection, sends frames, and skips ahead if a write falls behind. |
 | [web/viewer.js](web/viewer.js) | Fetches the session, opens the socket, and calls `ctx.arc` to place each car. |
+| [web/analysis.js](web/analysis.js) | Handles the local clock, segment requests, and lap and event jumps. |
 
 ## Trace one frame
 
-At **0:28.2** in the Barcelona clip, the importer uses source time **14:01:36.200 UTC**. Hamilton's surrounding observations are at **14:01:36.171** and **14:01:36.411**. The importer estimates his position between them, transforms it onto the map, and writes it to frame index **141**. Go later sends that row to the browser. For any snapshot, divide the displayed elapsed milliseconds by 200 to find its row in the prepared recording.
+At **0:28.2** in the short Barcelona clip, the importer uses source time **14:01:36.200 UTC**. Hamilton's surrounding observations are at **14:01:36.171** and **14:01:36.411**. The importer estimates his position between them, transforms it onto the map, and writes it to frame index **141**. In the full race, that same moment is around **58:08** because the recording starts at lights out. The source clock gives both recordings a common reference point.
 
 ## How we verify changes
 
@@ -84,6 +91,6 @@ GitHub Actions runs these checks on pull requests. The real Barcelona clip is ge
 - **How does the client recover?** After a disconnect, the browser retries and can draw the first full frame it gets. If the process itself restarts, it starts a new timeline because the old start time lived in memory.
 - **What grows with more viewers?** At five frames per second, 200 connected viewers would mean about 1,000 outbound messages per second at full cadence. That's a rough estimate for a future load test. Measure message size and watch CPU and network use to see what actually limits the app.
 
-**Next checkpoint.** Verify the recording against a live S3 bucket. Sharing one playback timeline across servers is the next architecture milestone.
+**Storage verification.** The full race was uploaded to Moto on localhost and loaded through the same S3 SDK path that Go uses for a bucket. The browser replayed from that object. **Next milestone.** Share one playback timeline across multiple servers using Redis.
 
 Update this guide when a milestone ships. Revise the flow and file list in place, and keep the decisions and limits that still apply.
