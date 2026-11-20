@@ -28,7 +28,7 @@ HTTP request and response fit the page and map because the browser needs them on
 
 **Local analysis** starts paused and fetches the first position segment over HTTP. Segments cover 20 seconds for the full grid and one minute for the two-driver recording. Seeking requests the segment for the selected time. The browser keeps up to five segments and prefetches the next one near a boundary. The local clock controls play, pause, and speed. **Shared playback** uses the server clock and the WebSocket.
 
-The prepared full-grid file is about 24 MB. The metadata and first position segment total about 100 KB. The browser requests the complete timing history after the first position frame. Go compresses that separate response to about 400 KB for browsers that support gzip.
+The prepared full-grid file is about 24 MB. The metadata and first position segment total about 100 KB. The session metadata includes the small race-state timeline and race distance. The browser requests the complete driver timing history after the first position frame. Go compresses that separate response to about 400 KB for browsers that support gzip.
 
 To see the difference, open the browser's Network tab and reload. Inspect the JSON response from `/api/session`, then inspect `/api/segments/0` and `/api/timing`. Switch to shared playback to watch messages arrive over `/ws`.
 
@@ -66,6 +66,12 @@ One server clock means late joiners receive the current frame as soon as they co
 - **Tyre age comes from the stint.** Match the driver's current lap to the stint's lap range. Add the laps run during the stint to the age reported when it began. The number is the age at the start of that lap. [OpenF1 stints](https://openf1.org/docs/#stints)
 - **A finish is per driver.** The importer matches a classified finisher's final lap to its start time and duration, then checks that the crossing falls after the race control flag. Even lapped drivers get their own finish time. At the final frame the tower switches to the official order and gaps, which can reflect penalties. Barcelona's archived results identify retirements without reliable timestamps for each car, so the tower shows those DNF labels with the final classification. Seeking backwards rolls back the results. [OpenF1 session results](https://openf1.org/docs/#session-result)
 
+### How race state and driver comparison follow a seek
+
+- **Race control is a timeline of changes.** The importer records the start, Virtual Safety Car deployment, the ending warning, the track-wide clear message, and the chequered flag. The viewer finds the most recent change at or before the current playhead. That works for backward seeks, late joins, and frames skipped during buffering. A clear signal for one sector doesn't end a track-wide Virtual Safety Car.
+- **The lap counter follows first place.** Find the driver in P1 at the playhead, then read that driver's latest lap. The race distance is the official winner's completed lap count. The lookup uses the same timestamps as the leaderboard.
+- **Driver selection stays in the browser.** Every driver's timing is already in the archive response. Changing either dropdown rebuilds the two chart series and recalculates last and fastest completed laps at the same playhead. The comparison and the local playback clock are independent.
+
 ## Where to look in the code
 
 | Start here | What it does |
@@ -80,7 +86,8 @@ One server clock means late joiners receive the current frame as soon as they co
 | [web/viewer.js](web/viewer.js) | Fetches the session, opens the socket, and calls `ctx.arc` to place each car. |
 | [web/analysis.js](web/analysis.js) | Handles the local clock, segment requests, and lap and event jumps. |
 | [web/timing-tower.js](web/timing-tower.js) | Picks timing records by replay time and renders rank, gaps, tyres, lap times, and flags. |
-| [web/race-review.js](web/race-review.js) | Draws gap history, shows completed laps at the current replay time, and connects event buttons to local seeking. |
+| [web/race-context.js](web/race-context.js) | Finds the race-control state, leader and lap for the current frame. |
+| [web/race-review.js](web/race-review.js) | Updates the selected pair’s gap chart and completed laps and connects event buttons to local seeking. |
 
 ## Trace one frame
 
@@ -93,7 +100,7 @@ At **0:28.2** in the short Barcelona clip, the importer uses source time **14:01
 | **Unit** | Replay timing at startup and loop boundaries, a one-frame recording, and rejection of malformed or incomplete recordings. [Replay tests](replay_test.go) |
 | **Importer** | UTC alignment, duplicate samples, exact matches, gaps, and a shared coordinate transform. CI uses synthetic inputs, including lapped finishers and retirements. [Importer tests](tools/test_import_barcelona.py) · [Classification tests](tools/test_import_barcelona_grid.py) |
 | **Integration** | File loading, a signed S3 request against a local endpoint, HTTP session metadata, and advancing frames on a real WebSocket. [File tests](main_test.go) · [S3 tests](s3_test.go) · [Route tests](routes_test.go) · [WebSocket tests](stream_test.go) |
-| **Browser** | Playwright starts the Go app and checks that the inspector can freeze and resume, playback continues after reconnect, and a failed metadata request shows an error. The grid test checks that flags appear independently and clear when seeking backwards. [Grid test](tests/browser/grid.spec.mjs) [Browser tests](tests/browser/replay.spec.mjs) |
+| **Browser** | Playwright starts the Go app and checks that the inspector can freeze and resume, playback continues after reconnect, and a failed metadata request shows an error. The grid test checks that race state and finish flags roll back when seeking, and that changing the selected pair keeps the same playhead. [Grid test](tests/browser/grid.spec.mjs) [Browser tests](tests/browser/replay.spec.mjs) |
 
 GitHub Actions runs these checks on pull requests. The real Barcelona clip is generated locally. The S3 test uses a local endpoint with test credentials.
 

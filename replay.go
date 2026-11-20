@@ -72,8 +72,10 @@ type raceEvent struct {
 }
 
 type raceTimeline struct {
-	Events  []raceEvent             `json:"events"`
-	Drivers map[string]driverTiming `json:"drivers"`
+	Events     []raceEvent             `json:"events"`
+	Drivers    map[string]driverTiming `json:"drivers"`
+	RaceStates []timedValue            `json:"raceStates,omitempty"`
+	TotalLaps  int                     `json:"totalLaps,omitempty"`
 }
 
 type session struct {

@@ -11,35 +11,49 @@ export function lapLabel(lap) {
   return `${clockLabel(lap.durationMs)}.${fraction}`;
 }
 
-function gapChart(session, drivers, names) {
+function driverName(session, driver) {
+  return session.driverNames?.[driver] || `Car ${driver}`;
+}
+
+function gapChart(session) {
   const canvas = document.querySelector("#gap-chart");
   const legend = document.querySelector("#gap-legend");
+  const panel = document.querySelector("#gap-panel");
   const ctx = canvas.getContext("2d");
-  const series = drivers.map((driver, index) => ({
-    name: names[index],
-    color: chartColors[index % chartColors.length],
-    positions: session.timeline.drivers?.[driver]?.positions ?? [],
-    points: (session.timeline.drivers?.[driver]?.gaps ?? []).map(({elapsedMs, value}) => ({
-      elapsedMs, gap: value === "" || Number(value) < 0 ? NaN : Number(value),
-    })),
-  }));
-  let max = 0;
-  for (const {points} of series) {
-    for (const {gap} of points) if (Number.isFinite(gap)) max = Math.max(max, gap);
-  }
-  if (!series.some(({points}) => points.some(({gap}) => Number.isFinite(gap)))) return () => {};
+  let series = [], tick = 5, current = 0, lastCursor = -1;
 
-  for (const {name, color} of series) {
-    const item = document.createElement("li");
-    const swatch = document.createElement("span");
-    swatch.style.background = color;
-    item.append(swatch, name);
-    legend.append(item);
+  function setDrivers(drivers) {
+    series = drivers.map((driver, index) => {
+      const timing = session.timeline.drivers?.[driver];
+      return {
+        name: driverName(session, driver),
+        color: chartColors[index % chartColors.length],
+        positions: timing?.positions ?? [],
+        points: (timing?.gaps ?? []).map(({elapsedMs, value}) => ({
+          elapsedMs, gap: value === "" || Number(value) < 0 ? NaN : Number(value),
+        })),
+      };
+    });
+    const hasData = series.some(({points, positions}) =>
+      points.some(({gap}) => Number.isFinite(gap)) || positions.some(({value}) => value === "1"));
+    panel.hidden = !hasData;
+    document.querySelector("#gap-unit").hidden = !hasData;
+    document.querySelector("#gap-empty").hidden = hasData || !session.grid;
+
+    legend.replaceChildren();
+    let max = 0;
+    for (const {name, color, points} of series) {
+      const item = document.createElement("li");
+      const swatch = document.createElement("span");
+      swatch.style.background = color;
+      item.append(swatch, name);
+      legend.append(item);
+      for (const {gap} of points) if (Number.isFinite(gap)) max = Math.max(max, gap);
+    }
+    tick = Math.max(5, Math.ceil(max / 20) * 5);
+    lastCursor = -1;
+    return hasData;
   }
-  document.querySelector("#gap-panel").hidden = false;
-  const tick = Math.max(5, Math.ceil(max / 20) * 5);
-  let current = 0;
-  let lastCursor = -1;
 
   function draw() {
     const width = canvas.clientWidth, height = canvas.clientHeight;
@@ -109,30 +123,76 @@ function gapChart(session, drivers, names) {
   }
 
   new ResizeObserver(draw).observe(canvas);
-  return (elapsed) => { current = elapsed; draw(); };
+  return {setDrivers, update(elapsed) { current = elapsed; draw(); }};
 }
 
-export function setupRaceReview(session, drivers = session.drivers) {
+export function setupRaceReview(session) {
   const timeline = session.timeline;
-  const names = drivers.map((driver) => session.driverNames?.[driver] || `Car ${driver}`);
-  const updateChart = gapChart(session, drivers, names);
+  const chart = gapChart(session);
+  const panel = document.querySelector("#comparison");
+  const lapPanel = document.querySelector("#lap-panel");
   const lapRows = document.querySelector("#lap-rows");
-  const rows = [];
-  let jump;
+  const pickers = document.querySelector("#comparison-pickers");
+  const selects = [...pickers.querySelectorAll("select")];
+  const canPick = Boolean(session.grid && session.drivers.length >= 2);
+  let rows = [], current = 0, jump;
 
-  drivers.forEach((driver, index) => {
-    const laps = timeline.drivers?.[driver]?.completedLaps ?? [];
-    if (laps.length === 0) return;
-    const row = lapRows.insertRow();
-    const name = document.createElement("th");
-    name.scope = "row";
-    name.textContent = names[index];
-    row.append(name);
-    const latest = row.insertCell(), fastest = row.insertCell();
-    latest.textContent = fastest.textContent = "—";
-    rows.push({laps, latest, fastest});
-  });
-  document.querySelector("#lap-panel").hidden = rows.length === 0;
+  function compare(drivers) {
+    const hasGap = chart.setDrivers(drivers);
+    lapRows.replaceChildren();
+    rows = [];
+    for (const driver of drivers) {
+      const laps = timeline.drivers?.[driver]?.completedLaps ?? [];
+      if (!canPick && laps.length === 0) continue;
+      const row = lapRows.insertRow();
+      const name = document.createElement("th");
+      name.scope = "row";
+      name.textContent = driverName(session, driver);
+      row.append(name);
+      rows.push({laps, latest: row.insertCell(), fastest: row.insertCell()});
+    }
+    lapPanel.hidden = rows.length === 0;
+    panel.hidden = !canPick && !hasGap && rows.length === 0;
+    updateComparison(current);
+  }
+
+  function updateComparison(elapsed) {
+    chart.update(elapsed);
+    // The last frame represents the remaining fraction of the recording.
+    const completedBy = elapsed >= session.durationMs - session.intervalMs ? session.durationMs : elapsed;
+    for (const {laps, latest, fastest} of rows) {
+      let last, best;
+      for (const lap of laps) {
+        if (lap.elapsedMs > completedBy) break;
+        last = lap;
+        if (!best || lap.durationMs < best.durationMs) best = lap;
+      }
+      latest.textContent = lapLabel(last);
+      fastest.textContent = lapLabel(best);
+      if (best) fastest.title = `Lap ${best.lap}`;
+      else fastest.removeAttribute("title");
+    }
+  }
+
+  if (canPick) {
+    function selectDrivers() {
+      const drivers = selects.map((select) => select.value);
+      selects.forEach((select, index) => {
+        for (const option of select.options) option.disabled = option.value === drivers[1 - index];
+      });
+      compare(drivers);
+    }
+
+    selects.forEach((select, index) => {
+      for (const driver of session.drivers) select.add(new Option(driverName(session, driver), driver));
+      select.value = session.drivers[index];
+      select.addEventListener("change", selectDrivers);
+    });
+    pickers.hidden = false;
+    selectDrivers();
+  } else {
+    compare(session.drivers);
+  }
 
   const list = document.querySelector("#race-events");
   const eventRows = (timeline.events ?? []).map((event) => {
@@ -168,21 +228,8 @@ export function setupRaceReview(session, drivers = session.drivers) {
       for (const {button} of eventRows) button.disabled = false;
     },
     update(elapsed) {
-      updateChart(elapsed);
-      // The last frame represents the remaining fraction of the recording.
-      const completedBy = elapsed >= session.durationMs - session.intervalMs ? session.durationMs : elapsed;
-      for (const {laps, latest, fastest} of rows) {
-        let last, best;
-        for (const lap of laps) {
-          if (lap.elapsedMs > completedBy) break;
-          last = lap;
-          if (!best || lap.durationMs < best.durationMs) best = lap;
-        }
-        latest.textContent = lapLabel(last);
-        fastest.textContent = lapLabel(best);
-        if (best) fastest.title = `Lap ${best.lap}`;
-        else fastest.removeAttribute("title");
-      }
+      current = elapsed;
+      updateComparison(elapsed);
       const next = eventRows.findLast((event) => event.elapsed <= elapsed)?.button;
       if (next !== active) {
         active?.removeAttribute("aria-current");

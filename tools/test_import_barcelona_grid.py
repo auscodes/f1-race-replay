@@ -1,7 +1,7 @@
 import unittest
 
 from import_barcelona import EPOCH, MILLISECOND
-from import_barcelona_grid import classification
+from import_barcelona_grid import classification, race_states
 
 
 class ClassificationTest(unittest.TestCase):
@@ -26,3 +26,24 @@ class ClassificationTest(unittest.TestCase):
         self.assertEqual(outcomes["2"]["gap"], "+1 LAP")
         self.assertEqual(outcomes["3"], {"status": "dnf", "elapsedMs": 11_200})
         self.assertEqual(length, 11_400)
+
+
+class RaceStatesTest(unittest.TestCase):
+    def test_vsc_ending_stays_active_until_the_track_is_clear(self):
+        observations = [
+            (0, "SESSION STARTED", None, None),
+            (500, "VSC DEPLOYED", None, None),
+            (600, "CLEAR IN TRACK SECTOR 10", "CLEAR", "Sector"),
+            (700, "VSC ENDING", None, None),
+            (800, "TRACK CLEAR", "CLEAR", "Track"),
+            (1000, "CHEQUERED FLAG", "CHEQUERED", "Track"),
+        ]
+        rows = [dict(date=(EPOCH + ms * MILLISECOND).isoformat(), message=message,
+                     flag=flag, scope=scope) for ms, message, flag, scope in observations]
+        self.assertEqual(race_states(rows, start=0, length=1200), [
+            {"elapsedMs": 0, "value": "green"},
+            {"elapsedMs": 500, "value": "vsc"},
+            {"elapsedMs": 700, "value": "vsc-ending"},
+            {"elapsedMs": 800, "value": "green"},
+            {"elapsedMs": 1000, "value": "chequered"},
+        ])

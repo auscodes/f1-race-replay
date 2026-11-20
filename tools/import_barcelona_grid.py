@@ -66,6 +66,27 @@ def classification(results, laps, start, flag):
     return outcomes, final_frame + INTERVAL_MS
 
 
+def race_states(control, start, length):
+    transitions = []
+    for row in control:
+        elapsed = timestamp_ms(row["date"]) - start
+        if not 0 <= elapsed < length:
+            continue
+        message = row["message"]
+        state = None
+        if message == "SESSION STARTED" or (message == "TRACK CLEAR" and row["scope"] == "Track"):
+            state = "green"
+        elif message == "VSC DEPLOYED":
+            state = "vsc"
+        elif message == "VSC ENDING":
+            state = "vsc-ending"
+        elif row["flag"] == "CHEQUERED" and row["scope"] == "Track":
+            state = "chequered"
+        if state:
+            transitions.append({"elapsedMs": elapsed, "value": state})
+    return sorted(transitions, key=lambda transition: transition["elapsedMs"])
+
+
 def import_grid(cache):
     control = archive_rows(cache, "race_control")
     start_utc = next(row["date"] for row in control if row["message"] == "SESSION STARTED")
@@ -96,6 +117,8 @@ def import_grid(cache):
         return datasets[endpoint][filters.removeprefix("&driver_number=")]
 
     timeline = race_timeline(control, laps, start, length, driver_names, cached_driver_rows)
+    timeline["raceStates"] = race_states(control, start, length)
+    timeline["totalLaps"] = max(result["number_of_laps"] for result in results)
     timeline["events"].append({"elapsedMs": flag, "kind": "flag", "label": "Chequered flag"})
     timeline["events"].sort(key=lambda event: event["elapsedMs"])
     for driver, timing in timeline["drivers"].items():

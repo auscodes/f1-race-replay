@@ -53,7 +53,9 @@ func TestGridTimingLoadsSeparately(t *testing.T) {
 	driver := clip.Session.Drivers[0]
 	clip.Session.Grid = map[string]gridDriver{driver: {Code: "ONE"}}
 	clip.Session.Timeline = &raceTimeline{
-		Events: []raceEvent{{ElapsedMS: 200, Label: "Chequered flag"}},
+		Events:     []raceEvent{{ElapsedMS: 200, Label: "Chequered flag"}},
+		RaceStates: []timedValue{{Value: "green"}, {ElapsedMS: 200, Value: "chequered"}},
+		TotalLaps:  66,
 		Drivers: map[string]driverTiming{driver: {
 			Laps:      []timedValue{{Value: "1"}},
 			Positions: []timedValue{{Value: "1"}},
@@ -70,6 +72,9 @@ func TestGridTimingLoadsSeparately(t *testing.T) {
 	}
 	if metadata.Timeline == nil || !reflect.DeepEqual(metadata.Timeline.Events, clip.Session.Timeline.Events) {
 		t.Fatal("session metadata must include race events")
+	}
+	if metadata.Timeline.TotalLaps != 66 || !reflect.DeepEqual(metadata.Timeline.RaceStates, clip.Session.Timeline.RaceStates) {
+		t.Fatal("session metadata must include the race state timeline and lap count")
 	}
 	timing := metadata.Timeline.Drivers[driver]
 	if len(timing.Laps) != 1 || len(timing.Positions) != 0 || timing.Outcome != nil {
