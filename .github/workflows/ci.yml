@@ -29,6 +29,16 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+  importer:
+    name: Importer checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s tools
+
   browser:
     name: Browser checks
     runs-on: ubuntu-latest
