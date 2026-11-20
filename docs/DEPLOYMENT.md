@@ -35,7 +35,7 @@ flowchart LR
 
 ## Start the local cluster
 
-Requires Docker, kind 0.33, kubectl, and a generated Barcelona recording. The kind config pins Kubernetes 1.36.4, in the tested range for KEDA 2.21.0. [KEDA compatibility](https://keda.sh/docs/2.21/operate/cluster/#kubernetes-compatibility)
+Run these commands from the repository root. Start Docker Desktop and check that Docker, kind 0.33, and kubectl are available. Prepare the Barcelona file using the [historical replay instructions](../README.md#historical-replay) before building the image. The kind config pins Kubernetes 1.36.4, in the tested range for KEDA 2.21.0. [KEDA compatibility](https://keda.sh/docs/2.21/operate/cluster/#kubernetes-compatibility)
 
 ```sh
 export KUBECONFIG="$PWD/.recordings/kind-kubeconfig"

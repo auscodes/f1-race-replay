@@ -1,6 +1,6 @@
 # The F1 Replay stack from scratch
 
-You can understand both résumé bullets by following **one race frame** and **one interrupted viewer**. Start with [the verified résumé wording](ROADMAP.md#résumé-wording-supported-by-the-current-evidence). The two walkthroughs below explain what each tool did, why the project used it, and what evidence supports the claim.
+You can understand both résumé bullets by following **one race frame** and **one interrupted viewer**. Start with [the verified résumé wording](ROADMAP.md#résumé-wording-supported-by-the-current-evidence). If you’ve never opened the app, the [project pitch](../PROJECT_GUIDE.md#tell-me-about-your-project) explains what the viewer sees. The two walkthroughs below explain what each tool did, why the project used it, and what evidence supports the claim.
 
 ## Bullet 1 — How a race frame gets to the browser
 
@@ -34,9 +34,11 @@ For example, if shared playback has been running for 10 seconds, Go divides 10,0
 
 ### 4. Redis makes independent Go servers agree on time
 
+If both Go servers load the same recording but server B starts 10 seconds after server A, each is capable of sending the same frames. At the same instant, B can be 50 frames behind A. They need a common starting point.
+
 **Redis** stores data under named keys. The replay uses one key for the start time of each recording. The key includes a hash of the recording bytes, so servers playing different recordings get separate clocks. A Redis script initializes the key atomically, which means two servers starting together agree on one value.
 
-**Pub/Sub** is a way to notify subscribers through a named channel. When the operator resets playback, Redis updates the key and publishes a notification in the same operation. Each server then reads the current value. A server can miss a message while disconnected, so it also reads the key periodically. Redis supplies the start time and a time sample. Go converts that reference to its local monotonic clock, which is meant for measuring elapsed time. Frame selection stays local to each server. [Redis delivery semantics](https://redis.io/docs/latest/develop/pubsub/#delivery-semantics) · [Clock implementation](../replay_clock.go)
+**Pub/Sub** is a way to notify subscribers through a named channel. When the operator resets playback, Redis updates the key and publishes a notification in the same operation. Each server then reads the current value. A server can miss a message while disconnected, so it also reads the key periodically. When a replica reads the key, Redis also supplies the current time. Go subtracts the stored start time from that sample to get how long the replay has been running, then advances from there with its local monotonic clock. A monotonic clock measures elapsed time independently of changes to the system’s calendar clock. Frame selection stays local to each server. [Redis delivery semantics](https://redis.io/docs/latest/develop/pubsub/#delivery-semantics) · [Clock implementation](../replay_clock.go)
 
 **Say this aloud**
 
@@ -76,7 +78,7 @@ In our test, the target was **60 active connections per replica**, with a minimu
 
 **What recovery means:** Measure the time from the last valid frame before the interruption to the first correctly aligned frame after reconnect. The script estimates the expected sequence from how much time passed and allows up to one second of alignment jitter. The **10-second target** is the maximum interruption a viewer can experience in this test. A surviving pod can restore playback while Kubernetes replaces the deleted one.
 
-**What the experiment showed:** The first run reached 220 viewers and four pods. Only 84 of 114 affected viewers recovered within ten seconds. Some reconnect attempts stalled for about a minute. We added a three-second check for missing frames or a stalled connection and bounded retries. In the verified local run, **all 129 affected viewers recovered**, the longest gap was **1.208 seconds**, and **all 220 k6 sessions completed**. The test covers one app pod failure with Redis and other pods still available. [Full run evidence](DEPLOYMENT.md#verified-local-run)
+**What the experiment showed:** The first run reached 220 viewers and four pods. Only 84 of 114 affected viewers recovered within ten seconds. Some reconnect attempts stalled for about a minute. We added a three-second check for missing frames or a stalled connection and bounded retries. In the verified local run, **all 129 affected viewers recovered**, the longest gap was **1.208 seconds**, and **all 220 k6 sessions completed**. The test covers one app pod failure with Redis and other pods still available. The 1.208 seconds is the slowest observed recovery. The p95 figure, 1.207 seconds, means about 95% of the measured recoveries were that fast or faster. [Full run evidence](DEPLOYMENT.md#verified-local-run)
 
 **Say this aloud**
 
@@ -92,8 +94,19 @@ If the interviewer asks about the résumé wording, use this version:
 
 [Original scope and project stories](../PROJECT_GUIDE.md) · [Milestones and evidence](ROADMAP.md)
 
+## Check that you can explain it
+
+| Question | Answer to compare with yours |
+| --- | --- |
+| Two Go replicas have the same race file. What else must they share? | The start time for the replay. The file contains the frames, and the shared start time lets both servers calculate which one to send now. |
+| A replica misses the Pub/Sub message for a reset. How does it catch up? | It periodically reads the authoritative Redis key. The message speeds up the update, and the key still holds the current start time. |
+| Why do we count open WebSockets for autoscaling? | Every open socket keeps receiving frames. The gauge captures that ongoing work and falls when viewers disconnect. |
+| What do 220, 129, and 1.208 seconds each mean? | 220 simultaneous connections, 129 connections on the deleted pod, and the longest gap from a valid pre-failure frame to a correctly aligned frame after reconnect. |
+
 ## See it for yourself
 
-1. Open the replay in two shared tabs. Refresh the second tab after the first has advanced. Explain why it starts in progress. Switch one tab to personal analysis and seek to see how its clock is independent.
-2. With the local server running, request `/api/session` and `/metrics`, then open a shared tab and look at the gauge again. Explain the difference between the recording metadata and the current connection count.
-3. Walk through the test result from the original 10-second failure to the passing run. Use the recorded connection count, number of affected viewers, and maximum gap as three distinct measurements. The deployment guide contains the local run commands and explains the pod deletion step. [Local setup](../README.md) · [Load test instructions](DEPLOYMENT.md#run-the-load-and-recovery-test)
+1. **Start with one Go server.** Run the [bundled demo](../README.md#quick-start), which uses a short fictional race and runs with Docker stopped. Open two tabs. Refresh the second tab after the first has advanced and watch it join in progress. Both tabs are following one Go process. Read `/api/session` for information about the recording and `/metrics` to see the open connection count change as tabs open and close. Stop the server from its terminal with Ctrl+C.
+2. **Try personal analysis with Barcelona.** Use the [historical replay instructions](../README.md#historical-replay) to use the full recording. Keep one tab in shared mode. In the other, seek to a pit stop. The local playhead moves independently, while the shared tab keeps following Go’s clock.
+3. **See what requires multiple replicas.** The [Redis run instructions](../README.md#shared-playback-across-servers) start two Go servers on different ports. The [Kubernetes evidence](DEPLOYMENT.md#verified-local-run) shows what happened when one of several pods was deleted under load. Each verifies a behavior beyond the two-tab demo.
+
+[Back to the document map](../PROJECT_GUIDE.md#start-here)

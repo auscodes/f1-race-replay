@@ -1,10 +1,17 @@
 # F1 Race Replay — Interview answers
 
-[All milestones and verification status](docs/ROADMAP.md) · [Redis and shared playback architecture](docs/REDIS_CLOCK.md) · [Kubernetes, metrics and load testing](docs/DEPLOYMENT.md)
+## Start here
 
-## Start here if the stack is new to you
+Read in this order. You can read every guide with Docker stopped. The optional exercises tell you which services to start.
 
-Read the [beginner stack guide](docs/STACK_GUIDE.md) first. It follows one frame from the S3 SDK through Go, Redis, and WebSockets, then follows one viewer through Kubernetes scaling and a pod failure. It gives you an interview answer for each résumé bullet and points to the implementation and evidence. Use the questions below for deeper follow-ups.
+| Read | What you should be able to explain afterward |
+| --- | --- |
+| **1. Get the story.** Read the [short pitch](#tell-me-about-your-project) and the [milestone roadmap](docs/ROADMAP.md). | What a viewer can do, how the project grew from a single replay to multiple servers, and which résumé claims we verified locally. |
+| **2. Learn the tools in context.** Read the [beginner stack guide](docs/STACK_GUIDE.md) from top to bottom. | Follow one race frame to the browser, then follow one interrupted viewer back to the correct moment. The guide defines each technology as it appears. |
+| **3. Turn it into interview answers.** Read the [architecture walkthrough](#walk-me-through-it-end-to-end), [your contribution and user stories](#who-is-this-for-and-what-did-you-personally-do), and the [system design follow-ups](#system-design-follow-ups). | Give a short answer about what you built, explain why the main choices made sense, and tell the story of the first failed recovery test and what changed. |
+| **4. Go deeper when a question comes up.** Use the [Redis clock notes](docs/REDIS_CLOCK.md) and the [deployment and load test guide](docs/DEPLOYMENT.md). | Explain what happens if a replica misses a clock update, why open connections are the scaling metric, and exactly how the recovery time was measured. |
+
+For an optional first demo, follow the [README quick start](README.md#quick-start). Use the [code map](#code-to-have-open) to find the function behind a specific answer.
 
 ## “Tell me about your project.”
 
