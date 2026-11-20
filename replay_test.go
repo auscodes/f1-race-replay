@@ -73,6 +73,7 @@ func TestLoadRecordingRejectsInvalidData(t *testing.T) {
 	}{
 		{name: "zero frame interval", change: func(clip *recording) { clip.IntervalMS = 0 }},
 		{name: "negative frame interval", change: func(clip *recording) { clip.IntervalMS = -1 }},
+		{name: "duration overflows the playback clock", change: func(clip *recording) { clip.IntervalMS = 1 << 62 }},
 		{name: "no frames", change: func(clip *recording) { clip.Frames = nil }},
 		{name: "incomplete track", change: func(clip *recording) { clip.Session.Track = clip.Session.Track[:2] }},
 		{name: "no drivers", change: func(clip *recording) { clip.Session.Drivers = nil }},
