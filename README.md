@@ -33,4 +33,12 @@ go vet ./...
 go test -race ./...
 ```
 
-GitHub Actions also checks Go formatting. See the [project guide](PROJECT_GUIDE.md) for the architecture and a tour of the code.
+The browser tests use Node.js 24 and run the app in Chromium.
+
+```sh
+npm ci
+npx playwright install chromium
+npm run test:browser
+```
+
+Both test suites run in GitHub Actions. The Go job also checks formatting. For the architecture and a tour of the code, see the [project guide](PROJECT_GUIDE.md).
