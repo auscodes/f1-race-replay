@@ -17,9 +17,11 @@ For a recording stored in S3, pass its object URI. Configure the bucket's region
 go run . -recording s3://your-bucket/clips/barcelona-2026.json
 ```
 
+The loader also accepts gzip-compressed recordings from local files or S3. For example, create one with `gzip -c race.json > race.json.gz` and pass the compressed path or object URI to `-recording`.
+
 ## Shared playback across servers
 
-Set `REPLAY_REDIS_URL` on each server and use identical recording bytes. Start Redis in one terminal.
+Set `REPLAY_REDIS_URL` on each server and use the same recording JSON. Plain and gzip copies of the same JSON share a clock. Start Redis in one terminal.
 
 ```sh
 docker run --rm -p 127.0.0.1:6379:6379 redis:7.4.12-alpine
@@ -45,8 +47,9 @@ The default startup uses a process-local clock. The [Redis design notes](learnin
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /` | Browser viewer |
-| `GET /api/session` | Circuit geometry, driver IDs, and clip duration in JSON |
-| `GET /api/segments/{index}` | Position frames for local playback and seeking. Full-grid segments cover 20 seconds. |
+| `GET /api/session` | Circuit geometry, driver IDs, clip duration, and recording version |
+| `GET /api/recordings/{version}/segments/{index}` | Cacheable position segments for local playback and seeking. Full-grid segments cover 20 seconds. |
+| `GET /api/segments/{index}` | Unversioned position segments for existing clients |
 | `GET /api/timing` | Full-grid timing, tyre stints, and race outcomes, loaded after the first map frame |
 | `GET /ws` | WebSocket stream of timestamped position snapshots |
 | `GET /readyz` | Readiness after the recording and clock are initialized |

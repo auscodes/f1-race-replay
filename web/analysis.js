@@ -30,10 +30,13 @@ export function startAnalysis(session, receiveFrame, setStatus) {
 
   const segments = new Map();
   const pending = new Map();
+  const segmentPath = session.recordingVersion
+    ? `/api/recordings/${encodeURIComponent(session.recordingVersion)}/segments`
+    : "/api/segments";
 
   function loadSegment(index) {
     if (!pending.has(index)) {
-      pending.set(index, fetch(`/api/segments/${index}`).then(async (response) => {
+      pending.set(index, fetch(`${segmentPath}/${index}`).then(async (response) => {
         if (!response.ok) throw new Error("Segment unavailable");
         const segment = await response.json();
         segments.set(index, segment);

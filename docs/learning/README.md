@@ -1,9 +1,25 @@
 # Learn F1 Race Replay
 
-Start with the [demo](../../README.md#quick-start) if you want to see the app first. You can read these guides with Docker stopped.
+Follow these steps in order and practice explaining each behavior in your own words. The bundled demo runs with Go. You can read the cluster sections before starting Docker.
 
-1. [Technology walkthrough](stack.md) follows one race frame to the browser and one viewer through a pod failure. It introduces Go, HTTP, WebSockets, S3, Redis, Kubernetes, Prometheus, KEDA, Grafana, and k6 as they appear.
-2. [Architecture and code map](architecture.md) shows how the importer, server, and browser fit together. Use it to trace a seek and see how the map, standings, and events stay aligned.
-3. [Redis clock](redis-clock.md) explains how replicas share a start time and what happens when a replica misses a reset.
-4. [Scaling and recovery](scaling.md) explains why the app scales on open sockets, what Grafana can show, and how k6 checks whether viewers return to the right race moment. It includes the passing and failing local runs.
-5. [Milestones](milestones.md) traces the project from a one-server demo through the full race and the Kubernetes tests. It records where each feature was verified.
+## Reading order
+
+1. **Use the viewer and explain the product.** Run the [quick start](../../README.md#quick-start) and read the [technology walkthrough](stack.md). Open two tabs to see how a late viewer joins. The full Barcelona recording also supports independent seeks. Practice a short answer that describes who uses the app, what they can do, and why shared playback is useful.
+2. **Follow a location sample into the prepared recording.** Read [Data and correctness](architecture.md#data-and-correctness). Follow `import_grid` in the [full-grid importer](../../tools/import_barcelona_grid.py), then `parse_samples` and `resample` in the [position importer](../../tools/import_barcelona.py). Explain how a 200 ms frame is built, when a car is omitted, and why the leaderboard uses recorded race order. Read [Object storage and startup](architecture.md#object-storage-and-startup) to connect the resulting JSON to `readRecording` in the [Go server](../../main.go).
+3. **Walk through a seek and a shared WebSocket join.** Read [Delivery, latency, and failure handling](architecture.md#delivery-latency-and-failure-handling). Sketch the [seek diagram](architecture.md#segment-size-caching-and-failed-requests) and trace the cache lookup and generation check in [browser analysis](../../web/analysis.js). Then read `frameAt` in the [recording code](../../replay.go) and `serve` in the [stream handler](../../stream.go). Explain why a late viewer can draw a single snapshot and what happens if sending a frame falls behind.
+4. **Follow a viewer across two replicas.** Read the [Redis clock guide](redis-clock.md) and trace `refresh` and `watch` in the [clock implementation](../../replay_clock.go). Explain why a replica that starts late can use the same playhead, how Pub/Sub speeds up resets, and how a replica recovers if it missed a notification.
+5. **Follow growth from two to four pods, then a pod failure.** Read [Scaling and recovery](scaling.md). Follow the [autoscaling policy](../../deploy/autoscale.yaml), the [fault driver](../../load/verify-kubernetes.sh), and the [k6 alignment check](../../load/recovery.js). Explain what the open-socket gauge measures, how it affects the replica count, what Grafana shows, and how k6 defines a successful recovery. Read the passing and failing results together.
+6. **Rehearse your improvement story and check your claims.** Read the [improvement log](improvements.md) and [verification scope](milestones.md#verification-scope). Explain the initial issue, why you changed it, how you measured the change, and what the result leaves open. Be ready to name the environment for each measurement.
+
+## Prepare for a project deep dive
+
+F1 Race Replay turns historical race telemetry into a viewer that supports individual analysis and synchronized playback. Python prepares a fixed-rate recording. Go loads it once and serves HTTP segments for independent seeking or sends snapshots over WebSockets for shared playback. Redis coordinates the playback clock across replicas. Local Kubernetes experiments show how the system scales and what a viewer experiences when a pod disappears. [System overview](architecture.md#data-flow)
+
+| Interview prompt | What to explain aloud |
+| --- | --- |
+| **Walk me through a seek to a safety-car event.** | Convert the event time to a frame index, find the segment and its offset, then use the frame timestamp for both the map and race state. Explain how a slow response to an older seek is handled. [Worked seek](architecture.md#a-seek-from-event-to-frame) |
+| **Why is Redis involved if the race is already in memory?** | Each replica has frames. Redis gives replicas a shared start time. Explain what a late replica reads, what happens after a missed reset, and what still works during a Redis outage. [Redis clock](redis-clock.md#clock-ownership) |
+| **What did you improve after the first version?** | Start with the cold seek that waited for an entire uncompressed segment. Explain how gzip cut transfer size and why a versioned URL makes caching safe. Quote the test conditions alongside the result. [Performance evidence](improvements.md#position-segments-transferred-more-data-than-necessary) |
+| **What did the load test actually prove?** | In one local kind run, 220 sockets drove a scale-up from two to four pods. All 129 interrupted viewers recovered at the correct playhead within 1.208 seconds. The test timed valid frame to aligned frame. Discuss the slower rerun and why reconnect timing was broken into stages. [Recovery evidence](scaling.md#verified-local-run) · [Rerun results](scaling.md#grafana-verification-runs) |
+
+If asked for the deployment environment, say that the S3 SDK path was verified with Moto and that scaling and pod recovery were tested on local Kubernetes. The controlled Chromium benchmark measured seek latency. The [instrumented Kubernetes run](scaling.md#pod-deletion-with-recovery-stage-timings) measured WebSocket recovery. [Verification scope](milestones.md#verification-scope)

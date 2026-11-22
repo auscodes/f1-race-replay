@@ -1,12 +1,43 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestReadCompressedRecordingPreservesID(t *testing.T) {
+	plain, err := readRecording(t.Context(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data bytes.Buffer
+	writer := gzip.NewWriter(&data)
+	if _, err := writer.Write(demo); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "race.json.gz")
+	if err := os.WriteFile(path, data.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	clip, err := readRecording(t.Context(), path)
+	if err != nil || clip.id != plain.id || len(clip.Frames) != len(plain.Frames) {
+		t.Fatalf("compressed recording changed its identity or frame count: %v", err)
+	}
+	if err := os.WriteFile(path, data.Bytes()[:data.Len()-1], 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readRecording(t.Context(), path); err == nil || !strings.Contains(err.Error(), "decompress recording") {
+		t.Fatalf("expected a decompression error, got %v", err)
+	}
+}
 
 func TestReadRecordingFromFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "race.json")

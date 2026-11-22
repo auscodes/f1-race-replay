@@ -57,13 +57,44 @@ Try two shared tabs on one server. Start the second after the first has advanced
 
 ## Data and correctness
 
+### What the importer downloads
+
+The full-grid importer runs before the app starts. Python requests JSON from OpenF1 with the Barcelona session key `11307` and groups rows by driver number where applicable. Location data accounts for most of the rows, so the importer requests it in five-minute windows with one second of padding on each side for interpolation. Each request sequence starts with a 350 ms pause, uses a 35-second timeout per attempt, and backs off on transient failures. Successful responses are saved in `.recordings/openf1-grid` so an interrupted import can reuse them. The cache identifies location windows by index, so use a fresh `--cache-dir` when refreshing the archive or changing the session or window layout. [Full-grid import](../../tools/import_barcelona_grid.py) · [HTTP fetch helper](../../tools/import_barcelona.py)
+
+| OpenF1 endpoint | What the replay extracts |
+| --- | --- |
+| `drivers` | Driver number, name, abbreviation, team, and team colour. |
+| `location` | Timestamped X and Y coordinates for the cars and the reference lap. |
+| `laps` | Lap starts and durations for lap navigation, completed laps, and finish estimates. The reference lap’s sector times mark approximate map boundaries. |
+| `position` and `intervals` | Running order, gap to the leader, and interval to the car ahead. |
+| `pit` and `stints` | Pit events and available stop or lane times, plus tyre compound, stint lap range, and starting tyre age. |
+| `race_control` and `session_result` | Session start, selected flag and VSC transitions, and the final order, gaps, lap counts, and result statuses. |
+
+```mermaid
+flowchart TD
+    source["OpenF1 · Barcelona session 11307"] --> cache["Read cached responses or fetch JSON over HTTP"]
+    cache --> locations["Location windows"]
+    cache --> timing["Drivers, laps, timing, and race events"]
+    locations --> clean["Group by driver, discard invalid coordinates, sort and deduplicate"]
+    timing --> timeline["Build race-relative timing series and final results"]
+    clean --> sample["Use an exact sample, interpolate within 1 s, or omit the car"]
+    clean --> track["Build the map outline from Russell's lap 40"]
+    sample --> output["Prepared JSON · position frames every 200 ms"]
+    track --> output
+    timeline --> output
+```
+
 ### Recording format
 
-OpenF1 locations come at irregular times, and different feeds update independently. The importer aligns them once and writes fixed-rate position frames so playback can use a direct array lookup. The recording contains session metadata, position frames, and timing history. Metadata describes the circuit and drivers. Each frame is a list of driver IDs and coordinates. Timing is a set of timestamped records for each driver, plus race-wide events. The cost of preparing frames is a larger file and regenerating it when the importer logic changes. [Importer](../../tools/import_barcelona_grid.py) · [Recording types](../../replay.go)
+OpenF1 observations arrive at irregular intervals. Python prepares position frames every 200 ms so Go can divide elapsed time by 200 and index directly into the frame array. At 10 seconds, playback selects frame 50. A 94-minute replay needs roughly 28,000 frames, each with the available coordinates for up to 22 cars. The prepared Barcelona file is about 24 MiB on disk. In memory, Go also holds the decoded recording. Precomputing saves the server from searching and interpolating raw observations whenever a viewer needs a frame. The trade-off is more stored data and a new import when the preparation logic changes. [Frame builder](../../tools/import_barcelona.py) · [Go frame selection](../../replay.go)
+
+The JSON file holds session metadata, an array of position frames, and a timing history. A frame contains driver IDs and coordinates. Lap, tyre, gap, and race-control records stay in separate series because they change at their own rates. The browser uses the frame timestamp to find the applicable entries. This keeps unchanged tyre and flag data from being copied into thousands of frames and lets a backward seek reconstruct the earlier state.
 
 ### Timestamps and interpolation
 
-Archive timestamps are in UTC. The importer subtracts the race start to put all feeds on the same elapsed clock. The importer sorts observations and collapses identical duplicates. For a frame between two samples at most one second apart, it interpolates between their coordinates. Across a bigger gap or outside the observed range, the car is absent from that frame. The one-second bound keeps the map from drawing a car along a long guessed path. [Resampler](../../tools/import_barcelona.py)
+The importer uses the `SESSION STARTED` message as time zero and converts source timestamps to elapsed milliseconds. It skips location rows with missing or non-finite X or Y values, sorts each driver’s usable observations by time, collapses identical duplicates, and rejects conflicting coordinates for the same driver and millisecond. Timing series are generally restricted to the replay window. Running order can carry the latest pre-start value into time zero to show the starting order. [Cleanup and time conversion](../../tools/import_barcelona.py)
+
+When a sample lands exactly on a frame, the importer uses it directly. Between samples, it uses linear interpolation. If a car is at X=100 at 0 ms and X=140 at 400 ms, the 200 ms frame uses X=120. The surrounding samples must be at most one second apart. For a larger gap or a frame outside the observed range, the importer omits the car. A longer cutoff would keep more cars visible and could draw misleading paths across corners. The current cutoff is a design choice. If gaps regularly interrupt useful moments, compare how often cars disappear at different cutoffs and check the resulting paths against the circuit and the original observations. [Resampler](../../tools/import_barcelona.py) · [Importer tests](../../tools/test_import_barcelona.py)
 
 ### Race order and gaps
 
@@ -95,19 +126,48 @@ Each seek gets a generation number. After the network request completes, the bro
 
 ### Segment size, caching, and failed requests
 
-Twenty seconds is 100 frames at the recording’s 200-millisecond interval. It keeps a random seek small while giving the browser a block to play through. The browser retains up to five segments, shares simultaneous requests for the same segment, and prefetches near the end of a block. Shorter segments would reduce bytes per cold seek and increase requests during continuous playback. If a segment fails, playback pauses and the viewer can retry by seeking or pressing Play. If the separate timing request fails, the map can continue using position frames. [Segment loader](../../web/analysis.js) · [Timing loading](../../web/viewer.js)
+```mermaid
+flowchart TD
+    seek["Viewer seeks to a race time"] --> index["Calculate frame index and segment index"]
+    index --> cached{"Segment in browser memory?"}
+    cached -->|"Hit"| frame["Select the frame within the segment"]
+    cached -->|"Miss"| request["Start or reuse an HTTP request for the segment"]
+    request --> httpCache{"Versioned response in HTTP cache?"}
+    httpCache -->|"Hit"| save["Store the segment in browser memory"]
+    httpCache -->|"Miss"| server["Go encodes a slice of its loaded frame array"]
+    server --> save
+    save --> latest{"Still the latest seek?"}
+    latest -->|"Yes"| frame
+    latest -->|"No"| stop["Leave the playhead where it is"]
+    frame --> render["Render car positions and look up timing at the frame time"]
+```
+
+Twenty seconds is 100 frames at the recording’s 200-millisecond interval. The Go handler encodes an array slice and can gzip the response. The browser keeps up to five segments in memory per local analysis instance. Eviction follows insertion order. An in-flight request map lets overlapping requests for the same segment share one fetch. At 80% of the current segment, the browser starts fetching the next one when available. A seek into an in-memory segment skips HTTP. A miss goes through the HTTP cache and can reach Go, which already holds the recording in memory. The version in the URL lets browsers reuse the same segment across page loads. [Segment loader](../../web/analysis.js) · [HTTP handlers](../../main.go) · [Performance results](improvements.md)
+
+Shorter segments would reduce bytes per cold seek and increase requests during continuous playback. Prefetch can spend bandwidth on a segment the viewer never reaches. A failed segment fetch pauses playback until the viewer seeks or presses Play. Full timing loads separately so the map can appear first. Go encodes that immutable timing payload once and keeps both plain and gzip versions for reuse. If timing fails to load, the map can continue with position frames. [Timing loader](../../web/viewer.js)
 
 ### Frame selection and loop boundaries
 
-It divides the elapsed time since the playback clock’s start time by the frame interval to get an increasing sequence number. Taking that sequence modulo the number of frames gives the index inside the recording. For Barcelona the frame interval is 200 milliseconds, so the index advances about five times a second. The index wraps at the end, while the sequence keeps increasing. The browser uses the elapsed time within the recording to look up the right race state on each loop. [Frame lookup](../../replay.go)
+Go divides elapsed time since the playback clock’s start by the frame interval to get the sequence number. Taking it modulo the frame count gives the index inside the recording. The sequence keeps increasing across loops during the same shared clock run. An operator reset starts a new run and the sequence returns near zero. The browser uses the elapsed time within the recording to look up the right race state on each loop. [Frame lookup](../../replay.go) · [Shared clock](redis-clock.md)
 
 ### Late joins, disconnects, and slow viewers
 
-On shared playback, each connection computes the current frame using the playback clock. Go sends that frame immediately on join. Each message contains a full snapshot, so reconnecting viewers can draw from the next message they receive. If a send loop falls behind, it calculates the current frame again instead of working through a backlog. Full snapshots repeat coordinates, but they keep recovery simple. Delta updates would reduce some bytes and require a baseline and a recovery protocol. [Shared stream](../../stream.go)
+On shared playback, each connection computes the current frame using the playback clock. Go sends that frame immediately on join. Each message contains a full snapshot, so a reconnecting viewer can draw the next message without reconstructing earlier frames. Each write has a two-second deadline. When a write succeeds but the loop has fallen behind, the next iteration recalculates the current frame and can skip old ones. The design keeps viewers close to the shared playhead at the cost of repeated coordinates and per-connection encoding. If encoding shows up in a profile, replicas could reuse an encoded payload for viewers on the same frame. Delta messages would also need a way to send a fresh baseline after reconnect. [Shared stream](../../stream.go)
 
 ### Object storage and startup
 
-S3 is optional storage for the prepared artifact. Go reads the entire object through the SDK once at startup, just as it can read a prepared file from disk. It then serves frames from memory and avoids a disk or object-store request for each seek. The SDK path was exercised using Moto, a local S3 emulator. In a separate end-to-end check, both Go processes loaded the full-grid recording from Moto and used real Redis. The Kubernetes preview packages the recording into its local test image. This is simple for one race per process. A larger catalog could store independently retrievable segments and load data on demand. [Startup and routes](../../main.go) · [S3 loader](../../s3.go)
+S3 is optional storage for the prepared JSON. Go reads and validates the whole recording at startup, then serves frames from process memory. Every replica pays the startup and memory costs. The SDK path was exercised separately using Moto, a local S3 emulator, with two Go processes and real Redis. The local Kubernetes test image packages the recording. [Startup and routes](../../main.go) · [S3 loader](../../s3.go)
+
+For a larger catalog, a possible design is to store independently retrievable segments in S3. A service or CDN could serve a segment from a cache keyed by recording version and segment index, and fetch it from S3 on a miss. Popular highlights could become hot entries through normal requests. That would reduce how much each replica loads and keep repeat lookups fast. A cold seek would pay storage latency. The full race would still take space in S3. Compression or a lower frame rate addresses recording size. Measure memory per replica, startup time, and cold-seek latency before changing the storage layout.
+
+```mermaid
+flowchart TD
+    request["Request a recording version and segment index"] --> cached{"Segment in service or CDN cache?"}
+    cached -->|"Hit"| response["Return segment"]
+    cached -->|"Miss"| storage["Fetch segment from S3"]
+    storage --> fill["Store a cached copy"]
+    fill --> response
+```
 
 ## Testing strategy
 
@@ -125,7 +185,7 @@ With watch-only playback and an immutable start time, a replica that already has
 
 ### Estimating playback capacity
 
-At five frames per second, 200 viewers means roughly 1,000 outbound frame messages per second at full cadence. Multiply that rate by the average bytes per message to estimate bandwidth. A capacity test can then check CPU, memory, reconnect behavior, and viewer drift to choose a target with enough headroom. For local analysis, immutable segments could be served through a cache or CDN with URLs keyed by recording version. That would keep repeated segment requests away from the replay process.
+At five frames per second, 200 viewers means roughly 1,000 outbound frame messages per second at full cadence. Multiply that rate by the average bytes per message to estimate bandwidth. A capacity test can then measure CPU, memory, reconnect behavior, and viewer drift to choose a target with enough headroom. Personal analysis uses versioned HTTP segments today. A CDN could serve those same immutable segments to multiple viewers and reduce requests reaching Go. [Local analysis delivery](#segment-size-caching-and-failed-requests)
 
 ### Autoscaling and observability
 
@@ -133,7 +193,7 @@ Kubernetes runs the Go replicas and sends new connections to available pods thro
 
 ### How the failure test changed reconnect behavior
 
-The first pod-failure test scaled to four pods and reached 220 viewers, but only 84 of 114 interrupted viewers got a valid frame within ten seconds. Some reconnect attempts took about a minute. A socket can stop delivering frames before the client sees a close event. The viewer gained a three-second watchdog for missing frames, and the k6 client gained a bounded retry cadence. The load test also checks frame alignment and requires every k6 session to finish. In the recorded follow-up run, all 129 affected viewers recovered, with a maximum gap of about 1.21 seconds. [Load-test evidence](scaling.md#verified-local-run) · [Grafana reruns](scaling.md#grafana-verification-runs)
+A socket can stop delivering frames before the client sees a close event. The viewer uses a three-second watchdog and reconnects when the stream goes silent. The k6 test checks frame alignment after reconnection and now breaks the gap into detection, retry, handshake, and alignment. The failure test and subsequent reruns show why the total time alone is insufficient for diagnosing a slow recovery. [Failure experiment](scaling.md#what-the-first-load-test-changed) · [Reconnect measurements](improvements.md#one-recovery-number-hid-where-the-time-went)
 
 ## Code map
 
