@@ -40,7 +40,7 @@ Those commands use the bundled demo. For Barcelona, add `-recording .recordings/
 REPLAY_REDIS_URL=redis://127.0.0.1:6379/0 go run . -reset-shared-clock
 ```
 
-The default startup uses a process-local clock. The [Redis design notes](learning/redis-clock.md) explain clock ownership and how to verify cross-server playback.
+The default startup uses a process-local clock. The [technical guide](learning/README.md#redis-keeps-replicas-on-the-same-timeline) explains shared clock ownership.
 
 ## Interfaces
 

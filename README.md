@@ -29,7 +29,7 @@ go run . -recording .recordings/barcelona-2026-grid.json
 
 - [Configure S3 or shared playback across servers](docs/CONFIGURATION.md)
 - [Run on local Kubernetes and open Grafana](docs/DEPLOYMENT.md)
-- [Learn how the project works](docs/learning/README.md)
+- [Read the technical guide](docs/learning/README.md)
 
 ## Development
 
