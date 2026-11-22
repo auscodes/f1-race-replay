@@ -78,8 +78,20 @@ Both reruns with Grafana installed reached 220 concurrent WebSockets, grew from 
 
 The dashboard [screenshot](../images/grafana.png) is from the passing repeat. The driver requested pod deletion at 16:49:30 UTC. The per-pod chart shows the deleted pod’s series ending and surviving pods accepting its viewers. The cause of the slower first rerun remains unconfirmed. The results show that recovery can vary even when the deployment reaches the same connection and replica counts.
 
-The stage timings added later were verified in a four-socket proxy test. Rerun this pod-deletion experiment to collect those timings under cluster load. The original run and both Grafana reruns report total recovery time. [Recovery diagnostics](improvements.md#one-recovery-number-hid-where-the-time-went)
+## Pod deletion with recovery stage timings
 
-For a capacity decision, repeat the run at several load levels and record CPU, memory, payload bytes, reconnect attempts, and the recovery time distribution. Timestamping the last frame, disconnect detection, handshake, and first aligned frame would help narrow down which stage causes a long recovery. A rolling update and a Redis interruption would cover failure paths beyond the single replay pod deletion tested here. [Load scenario](../../load/recovery.js) · [Test driver](../../load/verify-kubernetes.sh)
+On 22 November 2026, the current build replayed the full Barcelona recording on a fresh local kind cluster with the checked-in KEDA and Prometheus configuration. Prometheus observed 220 concurrent connections after the Deployment scaled from two to four available pods. The driver deleted a pod serving 118 connections. All 118 interrupted viewers received a correctly aligned frame within 10 seconds, all 220 sessions completed, and k6 validated all 98,433 frame messages.
+
+| Measurement | p95 | Maximum |
+| --- | ---: | ---: |
+| Last valid frame to interruption detection | 69 ms | 72 ms |
+| Detection to start of the successful reconnect attempt | 1,001 ms | 1,004 ms |
+| Successful WebSocket handshake | 19 ms | 19 ms |
+| Open socket to first correctly aligned frame | 1 ms | 1 ms |
+| **Last valid frame to first correctly aligned frame** | **1,087.15 ms** | **1,090 ms** |
+
+The one-second client retry wait accounted for most of the gap in this run. Each percentile describes its own set of measurements. Use the reported end-to-end percentile for the viewer experience. The older 47.682-second outlier predates this instrumentation, so its cause remains unknown. [Recorded improvement](improvements.md#one-recovery-number-hid-where-the-time-went)
+
+For a capacity decision, repeat at different loads and record CPU, memory, payload bytes, reconnect attempts, and the recovery time distribution. A rolling update and a Redis interruption would cover failure paths beyond the single replay pod deletion tested here. [Load scenario](../../load/recovery.js) · [Test driver](../../load/verify-kubernetes.sh)
 
 [Run the experiment](../DEPLOYMENT.md#run-the-load-and-recovery-test) · [Open Grafana](../DEPLOYMENT.md#view-the-grafana-dashboard)

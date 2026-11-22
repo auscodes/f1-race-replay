@@ -82,7 +82,7 @@ Grafana queries Prometheus and draws charts from its samples. In the replay dash
 
 **What the experiment showed:** The first run reached 220 viewers and four pods. Only 84 of 114 affected viewers recovered within ten seconds. Some reconnect attempts stalled for about a minute. We added a three-second check for missing frames or a stalled connection and bounded retries. In the verified local run, **all 129 affected viewers recovered**, the longest gap was **1.208 seconds**, and **all 220 k6 sessions completed**. The test covers one app pod failure with Redis and other pods still available. The 1.208 seconds is the slowest observed recovery. The p95 figure, 1.207 seconds, means about 95% of the measured recoveries were that fast or faster. [Full run evidence](scaling.md#verified-local-run) · [Grafana reruns](scaling.md#grafana-verification-runs)
 
-The newer k6 script also measures detection, time spent before the successful attempt, handshake time, and frame alignment. Those metrics were verified with four interrupted sockets through a local proxy. Use the distinction between the two experiments when explaining the results. [Recovery diagnostics](improvements.md#one-recovery-number-hid-where-the-time-went)
+The newer k6 script also measures detection, time before the successful attempt, handshake time, and frame alignment. In the instrumented 220-viewer Kubernetes run, all 118 affected viewers recovered within 1.090 seconds. The configured retry wait explained most of the gap in that run. [Recovery by stage](scaling.md#pod-deletion-with-recovery-stage-timings)
 
 ## How the pieces work together
 
