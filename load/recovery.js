@@ -10,6 +10,11 @@ const started = new Counter("replay_viewers_started");
 const interrupted = new Counter("replay_interruptions");
 const recovered = new Rate("replay_recovered_within_10s");
 const outage = new Trend("replay_recovery_ms", true);
+const detectionDelay = new Trend("replay_disconnect_detection_ms", true);
+const reconnectDelay = new Trend("replay_before_successful_attempt_ms", true);
+const handshakeDelay = new Trend("replay_reconnect_handshake_ms", true);
+const alignmentDelay = new Trend("replay_reconnect_alignment_ms", true);
+const abandonedAttempts = new Counter("replay_abandoned_reconnect_attempts");
 const valid = new Rate("replay_frames_valid");
 
 export const options = {
@@ -45,26 +50,31 @@ export function setup() {
 export default async function ({intervalMs, frames}) {
   const endpoint = base.replace(/^http/, "ws") + "/ws";
   const finishAt = Date.now() + holdSeconds * 1000;
-  let lastFrame, interruptedAt;
+  let lastFrame, interruption;
 
   function attempt() {
     return new Promise((resolve) => {
+      const attemptAt = Date.now();
       const socket = new WebSocket(endpoint);
       let completed = false;
       let open = false;
-      let watchdog = setTimeout(() => stop(false), 3000);
-      const timer = setTimeout(() => stop(true), Math.max(1, finishAt - Date.now()));
+      let openedAt;
+      let watchdog = setTimeout(() => stop("watchdog"), 3000);
+      const timer = setTimeout(() => stop("scheduled"), Math.max(1, finishAt - Date.now()));
 
-      function stop(scheduled) {
+      function stop(reason) {
         if (completed) return;
         completed = true;
         clearTimeout(timer);
         clearTimeout(watchdog);
-        if (!scheduled && lastFrame && interruptedAt === undefined) {
+        if (reason !== "scheduled" && lastFrame && !interruption) {
           // Measure the visible gap between valid frames, including close
           // detection and reconnect time.
-          interruptedAt = lastFrame.at;
+          interruption = { at: lastFrame.at, detectedAt: Date.now() };
+          detectionDelay.add(interruption.detectedAt - interruption.at, { reason });
           interrupted.add(1);
+        } else if (reason !== "scheduled" && interruption) {
+          abandonedAttempts.add(1, { reason });
         }
         if (open) socket.close();
         resolve();
@@ -74,6 +84,7 @@ export default async function ({intervalMs, frames}) {
       // if it later opens.
       socket.addEventListener("open", () => {
         open = true;
+        openedAt = Date.now();
         if (completed) socket.close();
       });
       socket.addEventListener("message", ({data}) => {
@@ -92,17 +103,20 @@ export default async function ({intervalMs, frames}) {
         valid.add(correct);
         if (!correct) return;
         clearTimeout(watchdog);
-        watchdog = setTimeout(() => stop(false), 3000);
+        watchdog = setTimeout(() => stop("watchdog"), 3000);
 
-        if (interruptedAt !== undefined) {
+        if (interruption) {
           const expected = lastFrame.sequence + (now - lastFrame.at) / intervalMs;
           // Allow up to one second of jitter when comparing two server clocks
           // from the load generator's arrival times.
           if (Math.abs(sequence - expected) * intervalMs > 1000) return;
-          const gap = now - interruptedAt;
+          const gap = now - interruption.at;
+          reconnectDelay.add(attemptAt - interruption.detectedAt);
+          handshakeDelay.add(openedAt - attemptAt);
+          alignmentDelay.add(now - openedAt);
           outage.add(gap);
           recovered.add(gap <= 10_000);
-          interruptedAt = undefined;
+          interruption = undefined;
         } else if (!lastFrame) {
           started.add(1);
         }
@@ -111,7 +125,7 @@ export default async function ({intervalMs, frames}) {
 
       socket.addEventListener("close", () => {
         open = false;
-        stop(false);
+        stop("close");
       });
     });
   }
@@ -120,5 +134,5 @@ export default async function ({intervalMs, frames}) {
     await attempt();
     if (Date.now() < finishAt) await new Promise((resolve) => setTimeout(resolve, 1000));
   }
-  if (interruptedAt !== undefined) recovered.add(false);
+  if (interruption) recovered.add(false);
 }

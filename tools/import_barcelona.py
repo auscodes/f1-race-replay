@@ -5,10 +5,13 @@ from bisect import bisect_left
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
+import logging
+from email.utils import parsedate_to_datetime
 from math import isfinite
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from time import sleep
+from time import monotonic, sleep
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import urlopen
 
@@ -117,9 +120,32 @@ def build_recording(track, observations, start_utc=CLIP_START, length_ms=CLIP_LE
 
 
 def fetch_rows(endpoint, filters=""):
-    sleep(0.35)  # Respect OpenF1's public request limit.
-    with urlopen(f"https://api.openf1.org/v1/{endpoint}?session_key={SESSION_KEY}{filters}", timeout=35) as response:
-        return json.load(response)
+    url = f"https://api.openf1.org/v1/{endpoint}?session_key={SESSION_KEY}{filters}"
+    started = monotonic()
+    delay = 0.35
+    for attempt in range(3):
+        sleep(delay)
+        try:
+            with urlopen(url, timeout=35) as response:
+                rows = json.load(response)
+            logging.info("Downloaded %s: %d rows in %.2fs", endpoint, len(rows), monotonic() - started)
+            return rows
+        except (URLError, TimeoutError, ConnectionError) as error:
+            if attempt == 2 or isinstance(error, HTTPError) and error.code not in (408, 429, 500, 502, 503, 504):
+                raise
+            delay = 2 ** attempt
+            retry_after = error.headers.get("Retry-After") if isinstance(error, HTTPError) and error.headers else None
+            if retry_after:
+                try:
+                    wait = int(retry_after) if retry_after.isdigit() else (
+                        parsedate_to_datetime(retry_after).astimezone(timezone.utc) - datetime.now(timezone.utc)
+                    ).total_seconds()
+                except (ValueError, TypeError, OverflowError):
+                    wait = 0
+                if wait > 30:
+                    raise
+                delay = max(delay, wait)
+            logging.warning("OpenF1 %s request failed (%s), retrying in %.1fs", endpoint, error, delay)
 
 
 def fetch_positions(driver, start, end):

@@ -1,10 +1,14 @@
 import unittest
+from io import BytesIO
+from unittest.mock import patch
+from urllib.error import HTTPError
 
 from import_barcelona import (
     CLIP_START,
     Sample,
     build_recording,
     completed_laps,
+    fetch_rows,
     parse_samples,
     race_window,
     resample,
@@ -14,6 +18,23 @@ from import_barcelona import (
 
 
 class ImportTests(unittest.TestCase):
+    @patch("import_barcelona.sleep")
+    @patch("import_barcelona.urlopen")
+    def test_fetch_retries_rate_limit_using_retry_after(self, urlopen, sleep):
+        urlopen.side_effect = [HTTPError(None, 429, "rate limit", {"Retry-After": "3"}, None),
+                               BytesIO(b'[{"driver_number": 44}]')]
+        with self.assertLogs(level="WARNING"):
+            self.assertEqual(fetch_rows("drivers"), [{"driver_number": 44}])
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [0.35, 3])
+
+    @patch("import_barcelona.sleep")
+    @patch("import_barcelona.urlopen")
+    def test_fetch_does_not_retry_permanent_http_error(self, urlopen, _sleep):
+        urlopen.side_effect = HTTPError(None, 404, "not found", {}, None)
+        with self.assertRaises(HTTPError):
+            fetch_rows("drivers")
+        urlopen.assert_called_once()
+
     def test_lap_result_is_available_at_finish(self):
         start = timestamp_ms("2026-06-14T13:00:00Z")
         rows = [{"date_start": "2026-06-14T13:00:20Z", "lap_number": 1, "lap_duration": 81.123},

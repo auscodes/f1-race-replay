@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +14,14 @@ import (
 )
 
 func TestReadRecordingFromS3(t *testing.T) {
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write(demo); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.Header.Get("Authorization") == "" {
 			t.Errorf("expected a signed GetObject request, got %s", r.Method)
@@ -19,6 +29,8 @@ func TestReadRecordingFromS3(t *testing.T) {
 		switch r.URL.Path {
 		case "/replay-bucket/clips/club circuit.json":
 			w.Write(demo)
+		case "/replay-bucket/clips/club circuit.json.gz":
+			w.Write(compressed.Bytes())
 		case "/replay-bucket/clips/missing.json":
 			w.Header().Set("Content-Type", "application/xml")
 			w.WriteHeader(http.StatusNotFound)
@@ -47,6 +59,10 @@ func TestReadRecordingFromS3(t *testing.T) {
 	}
 	if clip.Session.Name != "Club Circuit" || clip.Session.DurationMS != 12000 || len(clip.Frames) != 60 {
 		t.Fatalf("unexpected recording from S3: %q, %d frames", clip.Session.Name, len(clip.Frames))
+	}
+	zipped, err := readRecording(t.Context(), "s3://replay-bucket/clips/club%20circuit.json.gz")
+	if err != nil || zipped.id != clip.id || len(zipped.Frames) != len(clip.Frames) {
+		t.Fatalf("compressed S3 object changed recording identity or frame count: %v", err)
 	}
 	var noSuchKey *types.NoSuchKey
 	if _, err := readRecording(t.Context(), "s3://replay-bucket/clips/missing.json"); !errors.As(err, &noSuchKey) {

@@ -17,7 +17,7 @@ test("personal replay opens one segment and jumps with matching driver timing", 
     };
     await route.fulfill({json: session});
   });
-  await page.route("**/api/segments/*", async (route) => {
+  await page.route("**/api/recordings/v1-*/segments/*", async (route) => {
     const segment = Number(new URL(route.request().url()).pathname.split("/").at(-1));
     requested.push(segment);
     const startFrame = segment * 30;

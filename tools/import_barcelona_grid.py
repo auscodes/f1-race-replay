@@ -3,7 +3,9 @@
 import argparse
 from collections import defaultdict
 import json
+import logging
 from pathlib import Path
+from time import monotonic
 from urllib.parse import quote
 
 from import_barcelona import (
@@ -122,6 +124,7 @@ def sector_breaks(track, reference_lap):
 
 
 def import_grid(cache):
+    started = monotonic()
     control = archive_rows(cache, "race_control")
     start_utc = next(row["date"] for row in control if row["message"] == "SESSION STARTED")
     start = timestamp_ms(start_utc)
@@ -142,6 +145,8 @@ def import_grid(cache):
         filters = f"&date%3E{date_filter(low - MAX_GAP_MS)}&date%3C{date_filter(high + MAX_GAP_MS)}"
         for driver, rows in by_driver(archive_rows(cache, "location", f"location-{index}", filters)).items():
             locations[driver].extend(rows)
+    logging.info("Loaded OpenF1 sources from cache or network in %.2fs", monotonic() - started)
+    prepare_started = monotonic()
     samples = {driver: parse_samples(locations[driver]) for driver in driver_names}
     track_start, track_end = timestamp_ms(TRACK_START), timestamp_ms(TRACK_END)
     track = [sample for sample in samples["63"] if track_start <= sample.time_ms <= track_end]
@@ -172,6 +177,7 @@ def import_grid(cache):
                                              "color": row["team_colour"]} for row in driver_rows},
         "timeline": timeline,
     })
+    logging.info("Prepared frames and timing in %.2fs", monotonic() - prepare_started)
     return recording
 
 
@@ -180,8 +186,14 @@ def main():
     parser.add_argument("--cache-dir", type=Path, default=Path(".recordings/openf1-grid"))
     parser.add_argument("--output", type=Path, default=Path(".recordings/barcelona-2026-grid.json"))
     args = parser.parse_args()
-    recording = import_grid(args.cache_dir)
-    write_recording(args.output, recording)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    try:
+        recording = import_grid(args.cache_dir)
+        write_started = monotonic()
+        write_recording(args.output, recording)
+    except (OSError, ValueError, TypeError, KeyError, StopIteration) as error:
+        parser.exit(1, f"Import failed: {error}\n")
+    logging.info("Wrote recording in %.2fs", monotonic() - write_started)
     print(f"Wrote {len(recording['frames'])} frames for {len(recording['session']['drivers'])} drivers to {args.output}")
 
 
