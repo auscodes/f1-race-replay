@@ -55,4 +55,4 @@ The driver prints the results directory. `summary.json` contains the total recov
 
 [Local Kubernetes manifests](../deploy/local.yaml) · [Autoscaling config](../deploy/autoscale.yaml) · [k6 scenario](../load/recovery.js) · [Run driver](../load/verify-kubernetes.sh)
 
-[Scaling design and load-test results](learning/scaling.md)
+[Scaling design and load-test results](learning/README.md#2-follow-a-viewer-through-a-pod-failure)
