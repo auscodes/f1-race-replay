@@ -51,7 +51,7 @@ export KUBECONFIG="$PWD/.recordings/kind-kubeconfig"
 load/verify-kubernetes.sh
 ```
 
-The driver prints the results directory. `summary.json` contains the recovery trend and thresholds, `k6.log` has the test output, `fault.tsv` records the observed active connections, available replicas, disrupted pod, and that pod’s connection count, and `fault-time.txt` records when the driver requested the deletion in UTC. For another run, wait for the autoscaler to return to two available pods.
+The driver prints the results directory. `summary.json` contains the total recovery trend, pass thresholds, and timing for detection, retry, handshake, and alignment when samples are available. `k6.log` has the test output, `fault.tsv` records the observed active connections, available replicas, disrupted pod, and its connection count, and `fault-time.txt` records the deletion request in UTC. For another run, wait for the autoscaler to return to two available pods. After rebuilding and loading the local image into an existing cluster, restart the replay Deployment before measuring so the pods run the new binary.
 
 [Local Kubernetes manifests](../deploy/local.yaml) · [Autoscaling config](../deploy/autoscale.yaml) · [k6 scenario](../load/recovery.js) · [Run driver](../load/verify-kubernetes.sh)
 

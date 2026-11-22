@@ -30,11 +30,24 @@ flowchart LR
 
 [KEDA Prometheus scaler](https://keda.sh/docs/2.21/scalers/prometheus/) · [k6 WebSockets](https://grafana.com/docs/k6/latest/javascript-api/k6-websockets/) · [Redis clock](redis-clock.md)
 
+With 220 open sockets, the target of 60 sockets per replica implies roughly four replicas (`ceil(220 / 60)`), within the configured range of two to four. Prometheus samples every two seconds in the local cluster. The HPA also has a 120-second scale-down stabilization window to reduce churn. These settings let the test drive scale-up with a small local workload. They do not establish the maximum safe number of viewers per pod. For example, five frames per second and 200 viewers imply about 1,000 frame messages per second at full cadence. CPU and bandwidth also depend on the payload size, and sockets can be unevenly distributed because existing WebSockets stay attached to their original pods. [Scrape configuration](../../deploy/local.yaml) · [Autoscaling policy](../../deploy/autoscale.yaml)
+
 ## How Grafana is provisioned
 
 Grafana reads metrics from Prometheus. KEDA queries Prometheus separately to scale the Deployment. Kustomize turns the dashboard and data source definitions into ConfigMaps. When a file changes, Kustomize generates a new ConfigMap name, so applying the manifests updates the pod template and restarts Grafana with the new configuration. [Grafana configuration](../../deploy/grafana)
 
 ## What the first load test changed
+
+```mermaid
+flowchart TD
+    before["Viewer receives frames from pod A"] --> lost["Pod A is deleted"]
+    lost --> signal["Socket closes or 3 seconds pass without a frame"]
+    signal --> retry["Client attempts a new WebSocket connection"]
+    retry --> ready["Kubernetes Service routes to an available pod"]
+    ready --> frame["New pod sends its current frame using the shared clock"]
+    frame --> resume["Viewer resumes near the shared playhead"]
+    frame --> verify["k6 checks frame alignment and measures from the last valid frame"]
+```
 
 The initial run reached 220 connected viewers and four available pods. After the pod deletion, 84 of 114 interrupted viewers recovered within 10 seconds. The longest observed gap was 60.6 seconds. The distribution of handshake times pointed to stalled reconnect attempts. We added a three-second frame watchdog to the viewer and a bounded retry cadence to the k6 client. A Playwright test covers an open socket that stops delivering frames. Three seconds allows roughly 15 expected frames to go missing before reconnecting. A shorter timeout would react faster at the cost of extra reconnects during temporary network stalls.
 
@@ -64,5 +77,9 @@ Both reruns with Grafana installed reached 220 concurrent WebSockets, grew from 
 | Repeat | 118 of 118 | 1.102 s | All thresholds passed |
 
 The dashboard [screenshot](../images/grafana.png) is from the passing repeat. The driver requested pod deletion at 16:49:30 UTC. The per-pod chart shows the deleted pod’s series ending and surviving pods accepting its viewers. The cause of the slower first rerun remains unconfirmed. The results show that recovery can vary even when the deployment reaches the same connection and replica counts.
+
+The stage timings added later were verified in a four-socket proxy test. Rerun this pod-deletion experiment to collect those timings under cluster load. The original run and both Grafana reruns report total recovery time. [Recovery diagnostics](improvements.md#one-recovery-number-hid-where-the-time-went)
+
+For a capacity decision, repeat the run at several load levels and record CPU, memory, payload bytes, reconnect attempts, and the recovery time distribution. Timestamping the last frame, disconnect detection, handshake, and first aligned frame would help narrow down which stage causes a long recovery. A rolling update and a Redis interruption would cover failure paths beyond the single replay pod deletion tested here. [Load scenario](../../load/recovery.js) · [Test driver](../../load/verify-kubernetes.sh)
 
 [Run the experiment](../DEPLOYMENT.md#run-the-load-and-recovery-test) · [Open Grafana](../DEPLOYMENT.md#view-the-grafana-dashboard)

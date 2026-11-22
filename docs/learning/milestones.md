@@ -10,12 +10,12 @@ The project starts with a single shared replay and builds toward a load-tested K
 | **4 · Kubernetes and autoscaling** | Verified on local Kubernetes | Package the app, expose the active WebSocket connection count, scrape it with Prometheus, and have KEDA use it to adjust replica count. | [Scaling and metrics](scaling.md#how-scaling-and-recovery-work) · 220 connections, two to four available pods. |
 | **5 · Load and recovery** | Verified on local Kubernetes | k6 held 220 concurrent WebSockets while a serving pod was deleted. | [Verified load run](scaling.md#verified-local-run) · All 129 affected viewers recovered within 1.208 seconds. |
 | **6 · Grafana observability** | Verified on local Kubernetes | Provision the dashboard and Prometheus data source together. Inspect active connections and scrapeable pods during the failure test. | [Dashboard and reruns](scaling.md#grafana-verification-runs) |
-| **7 · AWS verification** | Pending | Run the same workload with real Amazon S3 storage and an EKS deployment. | Evidence of S3 reads, pod scaling, and recovery measurements from AWS. |
+| **7 · Delivery and recovery diagnostics** | Verified locally | Compress and version HTTP segments, support gzip recordings, retry transient imports, and break reconnect timing into stages. | [Browser benchmark, importer check, and four-socket recovery check](improvements.md) |
 
 ## Verification scope
 
 Two separate Go processes streamed the full Barcelona recording from Moto, a local S3 emulator, while sharing a real Redis clock. Late viewers joined both servers on frame 18. An operator reset moved both connections to frame 0.
 
-The scaling and recovery experiment used local Kubernetes with the prepared recording packaged into its image. A future AWS run would exercise real Amazon S3 object reads and KEDA scaling on EKS in the same deployment, then repeat the recovery measurement. [Deployment evidence](scaling.md#verified-local-run)
+The scaling and recovery experiment used local Kubernetes with the recording packaged into the app image. The performance follow-up measured segment delivery in Chromium against a local Go server and checked the new k6 timing metrics by dropping four sockets through a local proxy. The next useful check is to rerun the pod-deletion experiment with those metrics. End-to-end Amazon S3 and EKS verification would be needed to support an AWS deployment claim. [Kubernetes evidence](scaling.md#verified-local-run) · [Follow-up evidence](improvements.md)
 
 [Technology walkthrough](stack.md) · [Architecture and code map](architecture.md) · [Run the app](../../README.md)

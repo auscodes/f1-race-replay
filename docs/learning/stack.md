@@ -16,9 +16,9 @@ OpenF1 archive → Python importer → prepared race file → Go server → brow
 
 A **frame** is one of those snapshots. It tells the map where the cars were at a particular instant. Race positions, gaps, lap times, and race-control events stay as separate timing records. A lapped car can be physically ahead of the leader on the straight, so you need the timing data to know its place in the race.
 
-**Engineering choice:** Preparing the frames once makes playback an array lookup. It costs disk space and requires regenerating the recording when the importer changes. The importer interpolates between nearby location samples, with a one-second cap on the gap. Across a larger gap, it leaves the car out of that frame. [Full-grid importer](../../tools/import_barcelona_grid.py) · [Location resampling](../../tools/import_barcelona.py)
+Preparing the frames once makes playback an array lookup. At 200 ms per frame, 10 seconds into the race is frame 50. The importer estimates positions only between samples at most one second apart. Across a larger gap, it leaves the car out of that frame. Storing those snapshots uses more disk space, and changing how frames are built requires regenerating the recording. [OpenF1 feeds and cleanup](architecture.md#what-the-importer-downloads) · [Frame preparation and trade-offs](architecture.md#recording-format)
 
-### 2. S3 stores the prepared file and Go loads it
+### 2. Go loads the prepared recording once
 
 **S3** is object storage. Think of a **bucket** as the named container and a **key** as the name of a stored object inside it. In `s3://my-bucket/barcelona.json`, `my-bucket` is the bucket and `barcelona.json` is the key. The **AWS SDK** is the Go library that makes the S3 request and handles details such as request signing. [Amazon S3 overview](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html)
 
@@ -36,13 +36,11 @@ For example, if shared playback has been running for 10 seconds, Go divides 10,0
 
 If both Go servers load the same recording but server B starts 10 seconds after server A, each is capable of sending the same frames. At the same instant, B can be 50 frames behind A. They need a common starting point.
 
-**Redis** stores data under named keys. The replay uses one key for the start time of each recording. The key includes a hash of the recording bytes, so servers playing different recordings get separate clocks. A Redis script initializes the key atomically, which means two servers starting together agree on one value.
+**Redis** stores data under named keys. The replay uses one key for the start time of each recording. The key includes a hash of the decoded JSON, so a plain file and its gzip copy share a clock. A Redis script initializes the key atomically, which means two servers starting together agree on one value.
 
 **Pub/Sub** is a way to notify subscribers through a named channel. When the operator resets playback, Redis updates the key and publishes a notification in the same operation. Each server then reads the current value. A server can miss a message while disconnected, so it also reads the key periodically. When a replica reads the key, Redis also supplies the current time. Go subtracts the stored start time from that sample to get how long the replay has been running, then advances from there with its local monotonic clock. A monotonic clock measures elapsed time independently of changes to the system’s calendar clock. Frame selection stays local to each server. [Redis delivery semantics](https://redis.io/docs/latest/develop/pubsub/#delivery-semantics) · [Clock implementation](../../replay_clock.go)
 
-**From recording to shared playback**
-
-The race file tells each server which frames exist. Redis tells the servers when playback started. The servers choose frames from memory and send them over WebSockets. We use Pub/Sub to announce a clock reset, and the Redis key lets a new server join the current timeline or recover a missed notification. We verified this with two Go processes reading the full race through the S3 SDK against Moto and sharing a real Redis clock.
+In personal analysis, the viewer can reuse a recently loaded segment from its in-memory cache. It can also reuse versioned segment responses through the browser’s HTTP cache. If it reaches Go, the server serves positions from its loaded recording and can gzip the response. [Browser caching and segment delivery](architecture.md#segment-size-caching-and-failed-requests)
 
 ## How the app scales and a viewer recovers
 
@@ -84,9 +82,7 @@ Grafana queries Prometheus and draws charts from its samples. In the replay dash
 
 **What the experiment showed:** The first run reached 220 viewers and four pods. Only 84 of 114 affected viewers recovered within ten seconds. Some reconnect attempts stalled for about a minute. We added a three-second check for missing frames or a stalled connection and bounded retries. In the verified local run, **all 129 affected viewers recovered**, the longest gap was **1.208 seconds**, and **all 220 k6 sessions completed**. The test covers one app pod failure with Redis and other pods still available. The 1.208 seconds is the slowest observed recovery. The p95 figure, 1.207 seconds, means about 95% of the measured recoveries were that fast or faster. [Full run evidence](scaling.md#verified-local-run) · [Grafana reruns](scaling.md#grafana-verification-runs)
 
-**From open connection to recovery**
-
-Go counts active WebSockets on each pod. Prometheus scrapes the counts, and KEDA makes their total available to the Kubernetes autoscaler. k6 opened 220 concurrent connections and the deployment grew from two pods to four. Then we deleted the pod serving 129 viewers and measured when each one received a correctly aligned frame again. The longest gap was about 1.21 seconds. That result came from local Kubernetes.
+The newer k6 script also measures detection, time spent before the successful attempt, handshake time, and frame alignment. Those metrics were verified with four interrupted sockets through a local proxy. Use the distinction between the two experiments when explaining the results. [Recovery diagnostics](improvements.md#one-recovery-number-hid-where-the-time-went)
 
 ## How the pieces work together
 
